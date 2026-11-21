@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-21
+
 ### Added
 
 - New lab "The Switch Under the Table" (tier 2), a sequel to "Root of the Problem": an unknown switch is plugged into an access port and claims the spanning tree root, and root guard has cut the access switch off to contain it. Trace it with `show spanning-tree inconsistentports`, the root port and `show cdp neighbors`, then stop it at its port with PortFast and BPDU guard.
