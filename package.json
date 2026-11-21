@@ -1,0 +1,11 @@
+{
+  "name": "ccna-on-call",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CCNA: On Call - a gamified network engineering simulator",
+  "scripts": {
+    "test": "node tests/run-levels.mjs",
+    "start": "node tools/serve.mjs"
+  }
+}

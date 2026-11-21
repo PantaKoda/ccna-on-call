@@ -1,0 +1,8 @@
+# Local run:  docker compose up --build   ->  http://localhost:8080
+services:
+  ccna-on-call:
+    build: .
+    image: ccna-on-call:latest
+    ports:
+      - "8080:80"
+    restart: unless-stopped

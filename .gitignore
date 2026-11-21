@@ -1,0 +1,9 @@
+node_modules/
+*.log
+.DS_Store
+
+# Optional data packs are personal content (for example questions from a book
+# you own). They must never be committed. See data/README.md.
+data/*
+!data/README.md
+!data/none.js
