@@ -429,6 +429,42 @@ spanning-tree vlan 10 priority 4096
 
 `root primary` lowers the priority enough to win; `root secondary` on another switch makes it take over if the first fails. Priorities are set in steps of 4096. Check with `show spanning-tree vlan 10`: it names the root, and gives each port's role and state.
 
+What the two shortcuts really do:
+
+| Command | Priority it sets |
+| --- | --- |
+| `root primary` | 24576, or 4096 below the current root if that one is already lower |
+| `root secondary` | 28672 |
+| `no spanning-tree vlan 10 priority` | back to the default, 32768 |
+
+`root primary` cannot go below a root that already sits at priority 0; it reports a failure and you have to raise the other switch instead. Because every VLAN has its own tree, two distribution switches can share the work: one is root for half the VLANs and backup for the rest, and the other the reverse. Each VLAN then blocks a different uplink, so no cable sits idle.
+
+## Reading show spanning-tree
+
+```
+VLAN0010
+  Spanning tree enabled protocol rstp
+  Root ID    Priority    24586
+             Address     00d0.be6d.4863
+             Cost        4
+             Port        9 (GigabitEthernet0/1)
+
+  Bridge ID  Priority    32778  (priority 32768 sys-id-ext 10)
+             Address     00d0.890f.4763
+
+Interface           Role Sts Cost      Prio.Nbr Type
+Fa0/1               Desg FWD 19        128.1    P2p Edge
+Gi0/1               Root FWD 4         128.9    P2p
+Gi0/2               Altn BLK 4         128.10   P2p
+```
+
+- **Root ID** is the root bridge of this VLAN. If it says "This bridge is the root", you are on it. Otherwise `Cost` and `Port` give this switch's path to it.
+- **Bridge ID** is the switch you are on. The priority shown is the configured priority plus the VLAN number (the *system ID extension*): 32768 + 10 = 32778.
+- Each port has a **role** (Root, Desg, Altn) and a **state** (FWD, BLK). `Edge` marks a PortFast port.
+- `show spanning-tree summary` shows the mode and how many ports block in each VLAN.
+
+Two parallel cables between the same two switches are a loop like any other: one of them is blocked. That is the problem EtherChannel solves.
+
 ## Protecting the tree
 
 | Feature | Where | What it does |
@@ -437,6 +473,19 @@ spanning-tree vlan 10 priority 4096
 | **BPDU Guard** | The same access ports | Shuts the port (err-disabled) if a BPDU arrives, meaning a switch was plugged in |
 | **Root Guard** | Ports facing switches that must never become root | Blocks the port if a better BPDU arrives there; recovers by itself when it stops |
 | **Loop Guard** | Blocked and root ports on fibre uplinks | If BPDUs stop arriving, keeps the port blocked instead of letting it forward and cause a loop |
+
+Each one belongs on a particular kind of port, and on the wrong port it causes the outage it was meant to prevent:
+
+- **BPDU Guard on an uplink** disables the uplink, because the switch at the other end sends BPDUs all the time. The port shows `err-disabled` in `show interfaces status` and stays down until you remove the cause and bounce it with `shutdown` and `no shutdown`.
+- **Root Guard on a port that leads to the root** holds that port, because the root's own BPDUs are the best ones there are. It shows as `BKN` with `*ROOT_Inc` in `show spanning-tree`, and `show spanning-tree inconsistentports` lists it. Root guard goes on the distribution ports that face the access layer, never on an access switch's uplinks.
+
+```
+interface g0/2
+ spanning-tree guard root
+interface range fa0/1 - 2
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+```
 
 ## BPDU Filter {v1}
 
@@ -464,6 +513,17 @@ interface port-channel 1
 - A **layer 3** EtherChannel is the same bundle with `no switchport` and an IP address on the port-channel interface.
 - `show etherchannel summary`: `SU` beside the port-channel means layer 2 and in use; `P` beside a member means it is bundled.
 
+The flag beside each member port tells you what went wrong:
+
+| Flag | Meaning | Usual cause |
+| --- | --- | --- |
+| `P` | Bundled in the port-channel | Nothing: this is the goal |
+| `I` | Stand-alone: the port works on its own, outside the bundle | The other end did not negotiate: passive at both ends, or the far port is not in a group |
+| `s` | Suspended: the port carries nothing | The two ends cannot agree: `on` against LACP, or LACP against PAgP |
+| `D` | Down | Cable unplugged or a port shut down |
+
+A port left stand-alone is an ordinary parallel link again, so spanning tree blocks it. All members of one group on a switch must use the same protocol; to change the mode of an existing group, select every member with `interface range` and change them together.
+
 ## Ports for end devices
 
 | Device | Port setup |
@@ -484,7 +544,7 @@ interface port-channel 1
 
 Both are the quickest way to check that the cabling matches the network diagram: the neighbour and ports they report are what is really connected.
 
-> Common mistakes: leaving the root bridge to chance; PortFast on a port that leads to another switch; one EtherChannel end in passive and the other in passive; a trunk allowed list that differs between the two ends of a bundle.
+> Common mistakes: leaving the root bridge to chance; a test priority left behind on an access switch; PortFast or BPDU guard on a port that leads to another switch; root guard on an uplink; one EtherChannel end in passive and the other in passive; a trunk allowed list that differs between the two ends of a bundle.
 
 <!-- topic: vlans -->
 ## Why VLANs

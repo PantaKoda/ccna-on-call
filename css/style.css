@@ -438,3 +438,8 @@ a.side-link:hover { border-color: var(--accent); }
 .filebar .btn { font-family: var(--mono); }
 .modal.wide { width: min(760px, 100%); }
 .editor { display: block; width: 100%; min-height: 300px; height: 46vh; resize: vertical; margin-top: 8px; padding: 12px; font: 13.5px/1.5 var(--mono); tab-size: 2; white-space: pre; overflow: auto; color: var(--term); background: var(--term-bg); border: 1px solid var(--line-2); border-radius: 8px; }
+
+/* ---------- spanning tree and EtherChannel on the map ---------- */
+.port.blocked { fill: var(--gold); }
+.dot.blocked { background: var(--gold); }
+.link.bundled { stroke: var(--accent); stroke-width: 3.5; }

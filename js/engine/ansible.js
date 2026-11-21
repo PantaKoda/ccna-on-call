@@ -140,6 +140,7 @@ function runConfig(net, devName, task, check) {
   const s = new IosSession(net, devName, { mode: "config" });
   let error = null;
   for (const line of [...task.parents, ...task.lines]) {
+    net.touch();
     const out = s.run(line.trim()) || "";
     if (s.pending) s.pending = null;
     if (REJECT.test(out)) { error = `${line.trim()}\r\n${out.trim().split("\n").pop()}`; break; }

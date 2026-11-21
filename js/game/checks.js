@@ -44,6 +44,49 @@ export const C = {
   }),
   edgePort: (dev, list) => net => list.every(n => { const s = iface(net, dev, n).sw; return s.portfast && s.bpduguard; }),
 
+  // --- spanning tree and EtherChannel
+  stpMode: (devs, mode) => net => devs.every(d => net.devs[d].stp.mode === mode),
+  stpRoot: (dev, vlan) => net => { const t = net.st.stp[dev] && net.st.stp[dev][vlan]; return !!t && t.root.dev === dev; },
+  // the switch that would take over if the root failed: second-best bridge ID in the same tree
+  stpBackup: (dev, vlan) => net => {
+    const mine = net.st.stp[dev] && net.st.stp[dev][vlan];
+    if (!mine) return false;
+    const same = Object.keys(net.st.stp).filter(d => net.st.stp[d][vlan] && net.st.stp[d][vlan].root.dev === mine.root.dev);
+    same.sort((x, y) => { const a = net.st.stp[x][vlan].bridge, b = net.st.stp[y][vlan].bridge; return a.prio - b.prio || (a.mac < b.mac ? -1 : 1); });
+    return same[1] === dev;
+  },
+  stpPriority: (dev, vlan, n) => net => (net.devs[dev].stp.prio[vlan] ?? 32768) === n,
+  stpRole: (dev, n, vlan, role) => net => { const t = net.st.stp[dev] && net.st.stp[dev][vlan]; const p = t && t.ports[normIf(n)]; return !!p && p.role === role; },
+  // none of these switches has a port blocked by spanning tree in the VLAN
+  noBlocked: (devs, vlan) => net => devs.every(d => { const t = net.st.stp[d][vlan]; return !!t && Object.values(t.ports).every(p => p.state === "FWD"); }),
+  // at least `count` member ports are bundled into the channel group
+  bundled: (dev, group, count) => net => net.devs[dev].ifOrder.filter(n => { const c = net.devs[dev].ifaces[n].channel; const b = net.st.bundle[dev + "|" + n]; return c && c.id === group && b && b.state === "P"; }).length >= count,
+  lacp: (dev, group) => net => { const m = net.devs[dev].ifOrder.map(n => net.devs[dev].ifaces[n].channel).filter(c => c && c.id === group); return m.length > 0 && m.every(c => c.mode === "active" || c.mode === "passive"); },
+  errDisabled: (dev, n) => net => !!iface(net, dev, n).errdisabled,
+  // every member of the group uses this channel-group mode
+  channelMode: (dev, group, mode) => net => { const m = net.devs[dev].ifOrder.map(n => net.devs[dev].ifaces[n].channel).filter(c => c && c.id === group); return m.length > 0 && m.every(c => c.mode === mode); },
+  // the port-channel interface is a trunk that allows exactly these VLANs
+  poTrunk: (dev, group, vlans) => net => { const i = net.devs[dev].ifaces[`Port-channel${group}`]; const a = i && i.sw && i.sw.mode === "trunk" && i.sw.allowed; return !!a && a.length === vlans.length && vlans.every(v => a.includes(v)); },
+  // root guard on exactly the listed ports of each switch: { SW1: ["g0/2"], SW2: [] }
+  rootGuardOnly: want => net => Object.keys(want).every(dev => {
+    const have = net.devs[dev].ifOrder.filter(n => net.devs[dev].ifaces[n].sw && net.devs[dev].ifaces[n].sw.guard === "root");
+    const exp = want[dev].map(normIf);
+    return have.length === exp.length && exp.every(n => have.includes(n));
+  }),
+  // PortFast and BPDU guard on exactly the listed ports
+  edgeOnly: (dev, list) => net => {
+    const exp = list.map(normIf), d = net.devs[dev];
+    return d.ifOrder.filter(n => d.ifaces[n].sw).every(n => { const s = d.ifaces[n].sw, want = exp.includes(n); return !!s.portfast === want && !!s.bpduguard === want; });
+  },
+  // no port is err-disabled, and none is held by root guard
+  stpClean: devs => net => devs.every(dev => net.devs[dev].ifOrder.every(n => !net.devs[dev].ifaces[n].errdisabled)
+    && Object.values(net.st.stp[dev] || {}).every(t => Object.values(t.ports).every(p => p.state !== "BKN"))),
+  // at least one of the devices was changed, and every changed one is saved
+  savedIfChanged: devs => (net, lab) => {
+    const changed = devs.filter(d => lab.initial[d] !== runningConfig(net.devs[d]));
+    return changed.length > 0 && changed.every(d => net.devs[d].startup === runningConfig(net.devs[d]));
+  },
+
   // --- routing
   hasRoute: (dev, prefix, proto) => net => {
     const [a, len] = prefix.split("/");

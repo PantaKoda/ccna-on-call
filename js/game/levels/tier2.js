@@ -1,4 +1,5 @@
 import { C } from "../checks.js";
+import { stpLab, channelLab } from "../practice.js";
 
 const M24 = "255.255.255.0";
 const pc = (name, x, y, ip, gw) => ({ name, kind: "pc", x, y, ip: { mode: "static", ip, mask: M24, gw } });
@@ -153,6 +154,24 @@ export default [
     ],
     solution: [{ on: "SW1", cmds: ["enable", "configure terminal", "interface range fa0/1 - 2", "switchport mode access", "switchport port-security", "switchport port-security maximum 1", "switchport port-security violation restrict", "switchport port-security mac-address sticky", "spanning-tree portfast", "spanning-tree bpduguard enable", "interface range fa0/3 - 8", "shutdown", "end", "write memory"] }],
     debrief: "Violation modes: `protect` drops silently, `restrict` drops and counts/logs, `shutdown` (the default) err-disables the port until someone re-enables it.",
+  },
+
+  {
+    id: "root-bridge", tier: 2, type: "lab", xp: 240, par: 780,
+    title: "Root of the Problem",
+    from: "Dana Okafor, NOC Team Lead",
+    skills: ["spanning-tree mode rapid-pvst", "root primary and secondary", "bridge priority", "root guard", "show spanning-tree"],
+    ...stpLab({ site: "TOWER", vlans: [{ id: 10, name: "SALES" }, { id: 20, name: "ENG" }], roots: { 10: "DSW1", 20: "DSW1" }, left: 4096, exact: null, guard: true }),
+    debrief: "Spanning tree never broke anything here, which is why nobody noticed: with the wrong root the network still works, on a worse path. The root bridge decides which links forward, so it is chosen on purpose, with a backup, and root guard keeps the choice from being overruled by whatever gets plugged in below.",
+  },
+
+  {
+    id: "port-channel", tier: 2, type: "lab", xp: 240, par: 660,
+    title: "Two Cables, One Link",
+    from: "Priya Raman, Service Desk",
+    skills: ["channel-group", "LACP active and passive", "interface port-channel", "show etherchannel summary"],
+    ...channelLab({ site: "WHARF", vlans: [{ id: 10, name: "SALES" }, { id: 20, name: "ENG" }], ports: ["g0/1", "g0/2"], group: 1, fault: null }),
+    debrief: "Adding a cable between two switches adds no bandwidth by itself: spanning tree blocks it. A port channel is one logical port to spanning tree and to the VLAN configuration, so configure the `port-channel` interface and let the switch copy the settings to the members.",
   },
 
   {

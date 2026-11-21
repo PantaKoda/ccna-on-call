@@ -47,11 +47,12 @@ function newIface(d, name) {
     shutdown: d.kind === "router" ? kind === "phys" : name === "Vlan1",
     nat: null, aclIn: null, aclOut: null, helpers: [],
     ospfCost: null, ospfPri: null, ospfArea: null, ospfHello: null,
-    dot1q: null, dot1qNative: false, channel: null,
+    dot1q: null, dot1qNative: false, channel: null, errdisabled: null,
   };
-  if (d.kind === "switch" && kind === "phys") {
+  // switch ports and port-channels carry layer 2 settings
+  if (d.kind === "switch" && (kind === "phys" || kind === "po")) {
     i.sw = {
-      mode: null, accessVlan: 1, allowed: null, native: 1, portfast: false, bpduguard: false,
+      mode: null, accessVlan: 1, allowed: null, native: 1, portfast: false, bpduguard: false, guard: null, stpCost: null,
       ps: { on: false, max: 1, violation: "shutdown", sticky: false },
     };
   }
@@ -78,7 +79,7 @@ export function ensureIface(d, name) {
   if (d.ifaces[name]) return d.ifaces[name];
   const kind = ifKind(name);
   if (kind === "phys") return null;
-  if (kind === "vlan" && d.kind !== "switch") return null;
+  if ((kind === "vlan" || kind === "po") && d.kind !== "switch") return null;
   if ((kind === "loop" || kind === "sub") && d.kind !== "router") return null;
   if (kind === "sub" && !d.ifaces[name.split(".")[0]]) return null;
   d.ifaces[name] = newIface(d, name);
@@ -115,6 +116,7 @@ export function makeDevice(spec) {
   }
   Object.assign(d, {
     vlans: d.kind === "switch" ? { 1: { name: "default" } } : null,
+    stp: d.kind === "switch" ? { mode: "pvst", prio: {} } : null,       // prio[vlan] = configured bridge priority
     routes: [], ospf: {}, acls: {}, natRules: [], natLog: [],
     dhcp: { excluded: [], pools: {} }, defaultGw: null,
     enableSecret: null, enablePassword: null, pwEncrypt: false, banner: null,
@@ -258,17 +260,67 @@ function compute(net) {
   };
   const unite = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); };
 
+  // BPDU Guard: an edge port that hears a switch goes err-disabled, and stays
+  // that way until someone bounces it (shutdown, no shutdown).
+  for (const l of net.links) {
+    for (const [dn, ifn, on, oifn] of [[l.a, l.ai, l.b, l.bi], [l.b, l.bi, l.a, l.ai]]) {
+      const d = devs[dn], o = devs[on];
+      if (d.kind !== "switch" || o.kind !== "switch") continue;
+      const i = d.ifaces[ifn], p = o.ifaces[oifn];
+      if (!i.sw.bpduguard || i.shutdown || i.errdisabled || p.shutdown || p.errdisabled) continue;
+      i.errdisabled = "bpduguard";
+      net.logs[dn].push(`%SPANTREE-2-BLOCK_BPDUGUARD: Received BPDU on port ${shortIf(ifn)} with BPDU Guard enabled. Disabling port.`,
+        `%PM-4-ERR_DISABLE: bpduguard error detected on ${shortIf(ifn)}, putting ${shortIf(ifn)} in err-disable state`);
+    }
+  }
+
   const adminUp = (dn, ifn) => {
     const d = devs[dn];
     if (isHost(d)) return true;
     const i = d.ifaces[ifn];
-    return !!i && !i.shutdown;
+    return !!i && !i.shutdown && !i.errdisabled;
   };
   const physUp = (dn, ifn) => {
     if (!adminUp(dn, ifn)) return false;
     const p = net.peer(dn, ifn);
     return !!p && adminUp(p.dev, p.ifn);
   };
+
+  // ----- EtherChannel: which member ports are bundled -----
+  // bundle["dev|if"] = { po, state } with state P (bundled), I (stand-alone),
+  // s (suspended: carries nothing) or D (down).
+  const bundle = {};
+  const LACP = ["active", "passive"], PAGP = ["desirable", "auto"];
+  const negotiate = (a, b) => {
+    if (a === "on" && b === "on") return "P";
+    if (a === "on" || b === "on") return "s";
+    if (LACP.includes(a) && LACP.includes(b)) return a === "active" || b === "active" ? "P" : "I";
+    if (PAGP.includes(a) && PAGP.includes(b)) return a === "desirable" || b === "desirable" ? "P" : "I";
+    return "s";                                   // LACP on one end, PAgP on the other
+  };
+  const chan = (dn, ifn) => (devs[dn].kind === "switch" && devs[dn].ifaces[ifn] ? devs[dn].ifaces[ifn].channel : null);
+  for (const l of net.links) {
+    const ca = chan(l.a, l.ai), cb = chan(l.b, l.bi);
+    if (!ca && !cb) continue;
+    const state = !physUp(l.a, l.ai) ? "D" : ca && cb ? negotiate(ca.mode, cb.mode) : (ca || cb).mode === "on" ? "s" : "I";
+    if (ca) bundle[`${l.a}|${l.ai}`] = { po: `Port-channel${ca.id}`, state, peer: l.b, peerPo: cb ? cb.id : null };
+    if (cb) bundle[`${l.b}|${l.bi}`] = { po: `Port-channel${cb.id}`, state, peer: l.a, peerPo: ca ? ca.id : null };
+  }
+  // every member of one port-channel must lead to the same neighbour and the same channel there
+  const firstMember = {};
+  for (const [k, b] of Object.entries(bundle)) {
+    if (b.state !== "P") continue;
+    const g = `${k.split("|")[0]}|${b.po}`;
+    firstMember[g] ||= b;
+    if (b.peer !== firstMember[g].peer || b.peerPo !== firstMember[g].peerPo) b.state = "s";
+  }
+  const bstate = (dn, ifn) => (bundle[`${dn}|${ifn}`] ? bundle[`${dn}|${ifn}`].state : null);
+  // the port spanning tree and the VLAN logic see: the port-channel for a bundled member
+  const logical = (dn, ifn) => {
+    const b = bundle[`${dn}|${ifn}`];
+    return b && b.state === "P" && devs[dn].ifaces[b.po] && devs[dn].ifaces[b.po].sw ? b.po : ifn;
+  };
+  const dataUp = l => physUp(l.a, l.ai) && bstate(l.a, l.ai) !== "s" && bstate(l.b, l.bi) !== "s";
 
   // What a link end carries: tag ("u" = untagged, or a VLAN id) -> segment key.
   const side = (dn, ifn) => {
@@ -283,7 +335,7 @@ function compute(net) {
       }
       return m;
     }
-    const sw = d.ifaces[ifn].sw;
+    const sw = d.ifaces[logical(dn, ifn)].sw;
     if (sw.mode === "trunk") {
       for (const v of Object.keys(d.vlans).map(Number)) {
         if (sw.allowed && !sw.allowed.includes(v)) continue;
@@ -295,12 +347,122 @@ function compute(net) {
     return m;
   };
 
+  // ----- spanning tree, one tree per VLAN -----
+  // Blocked (alternate) ports do not change who can reach whom, since the tree
+  // still connects everything; they are computed for the show commands, the
+  // map and the objectives. A root-guard port that hears a better root is
+  // different: it really does stop carrying that VLAN.
+  const switches = net.order.filter(dn => devs[dn].kind === "switch");
+  const BW = n => (n.startsWith("Gig") ? 1000 : n.startsWith("Fast") ? 100 : 10);
+  const costOf = bw => (bw >= 10000 ? 2 : bw >= 2000 ? 3 : bw >= 1000 ? 4 : bw >= 200 ? 12 : bw >= 100 ? 19 : 100);
+  const portCost = (dn, lp) => {
+    const d = devs[dn], i = d.ifaces[lp];
+    if (i.sw && i.sw.stpCost != null) return i.sw.stpCost;
+    if (ifKind(lp) !== "po") return costOf(BW(lp));
+    let bw = 0;
+    for (const n of d.ifOrder) if (bundle[`${dn}|${n}`] && bundle[`${dn}|${n}`].po === lp && bundle[`${dn}|${n}`].state === "P") bw += BW(n);
+    return costOf(bw);
+  };
+  const portNbr = (dn, lp) => devs[dn].ifOrder.indexOf(lp) + 1;
+  const bridge = (dn, v) => ({ prio: (devs[dn].stp.prio[v] ?? 32768) + v, mac: fakeMac(dn, 99) });
+  const cmpKey = (x, y) => { for (let i = 0; i < x.length; i++) { if (x[i] < y[i]) return -1; if (x[i] > y[i]) return 1; } return 0; };
+
+  // logical links between switches, with the VLANs each carries
+  const trunkSegs = [], segOfLink = new Map();
+  for (const l of net.links) {
+    if (devs[l.a].kind !== "switch" || devs[l.b].kind !== "switch" || !dataUp(l)) continue;
+    const ap = logical(l.a, l.ai), bp = logical(l.b, l.bi);
+    let seg = trunkSegs.find(s => s.a === l.a && s.ap === ap && s.b === l.b && s.bp === bp);
+    if (!seg) { seg = { i: trunkSegs.length, a: l.a, ap, b: l.b, bp, vlans: new Set() }; trunkSegs.push(seg); }
+    segOfLink.set(l, seg.i);
+    const A = side(l.a, l.ai), B = side(l.b, l.bi);
+    for (const [tag, k] of A) {
+      if (!k.includes("#") || !B.has(tag)) continue;
+      const v = Number(k.split("#")[1]);
+      if (B.get(tag) === `${l.b}#${v}`) seg.vlans.add(v);
+    }
+  }
+
+  const calcTree = (v, removed) => {
+    const members = switches.filter(dn => devs[dn].vlans[v]);
+    const adj = {};
+    for (const m of members) adj[m] = [];
+    for (const e of trunkSegs) {
+      if (!e.vlans.has(v) || removed.has(e.i)) continue;
+      adj[e.a].push({ e, me: e.ap, other: e.b, op: e.bp });
+      adj[e.b].push({ e, me: e.bp, other: e.a, op: e.ap });
+    }
+    const out = {}, seen = new Set();
+    for (const start of members) {
+      if (seen.has(start)) continue;
+      const comp = [], stack = [start];
+      seen.add(start);
+      while (stack.length) { const u = stack.pop(); comp.push(u); for (const x of adj[u]) if (!seen.has(x.other)) { seen.add(x.other); stack.push(x.other); } }
+      const bid = dn => { const b = bridge(dn, v); return [b.prio, b.mac]; };
+      const root = comp.reduce((best, dn) => (cmpKey(bid(dn), bid(best)) < 0 ? dn : best));
+      const dist = { [root]: 0 }, done = new Set();
+      for (;;) {
+        let u = null;
+        for (const k of comp) if (dist[k] !== undefined && !done.has(k) && (u === null || dist[k] < dist[u])) u = k;
+        if (u === null) break;
+        done.add(u);
+        for (const x of adj[u]) { const nd = dist[u] + portCost(x.other, x.op); if (dist[x.other] === undefined || nd < dist[x.other]) dist[x.other] = nd; }
+      }
+      for (const dn of comp) {
+        let rootPort = null, bestKey = null;
+        if (dn !== root) for (const x of adj[dn]) {
+          const key = [dist[x.other] + portCost(dn, x.me), ...bid(x.other), portNbr(x.other, x.op), portNbr(dn, x.me)];
+          if (!bestKey || cmpKey(key, bestKey) < 0) { bestKey = key; rootPort = x.me; }
+        }
+        const ports = {};
+        for (const x of adj[dn]) {
+          let role = "Root";
+          if (x.me !== rootPort) role = cmpKey([dist[dn], ...bid(dn), portNbr(dn, x.me)], [dist[x.other], ...bid(x.other), portNbr(x.other, x.op)]) < 0 ? "Desg" : "Altn";
+          ports[x.me] = { role, state: role === "Altn" ? "BLK" : "FWD", cost: portCost(dn, x.me), seg: x.e.i };
+        }
+        out[dn] = { root: { dev: root, ...bridge(root, v) }, bridge: bridge(dn, v), cost: dist[dn], rootPort, ports };
+      }
+    }
+    return out;
+  };
+
+  const stp = {};                       // stp[dev][vlan] = { root, bridge, cost, rootPort, ports }
+  const rootBlocked = new Set();        // "segment|vlan" pairs stopped by root guard
+  for (const dn of switches) stp[dn] = {};
+  const allVlans = [...new Set(switches.flatMap(dn => Object.keys(devs[dn].vlans).map(Number)))];
+  for (const v of allVlans) {
+    const removed = new Set(), inconsistent = [];
+    let tree = calcTree(v, removed);
+    for (let round = 0; round < 8; round++) {
+      const hit = [];
+      for (const e of trunkSegs) {
+        if (!e.vlans.has(v) || removed.has(e.i)) continue;
+        for (const [dn, lp] of [[e.a, e.ap], [e.b, e.bp]]) {
+          const port = tree[dn] && tree[dn].ports[lp];
+          if (port && devs[dn].ifaces[lp].sw.guard === "root" && port.role !== "Desg") hit.push([e.i, dn, lp]);
+        }
+      }
+      if (!hit.length) break;
+      for (const [i, dn, lp] of hit) { removed.add(i); inconsistent.push([dn, lp, i]); }
+      tree = calcTree(v, removed);
+    }
+    for (const dn of Object.keys(tree)) stp[dn][v] = tree[dn];
+    for (const [dn, lp, i] of inconsistent) {
+      rootBlocked.add(`${i}|${v}`);
+      if (stp[dn][v]) stp[dn][v].ports[lp] = { role: "Desg", state: "BKN", cost: portCost(dn, lp), seg: i, note: "*ROOT_Inc" };
+    }
+  }
+
   const vlanActive = {};
   for (const l of net.links) {
-    if (!physUp(l.a, l.ai)) continue;
+    if (!dataUp(l)) continue;
     const A = side(l.a, l.ai), B = side(l.b, l.bi);
     for (const k of [...A.values(), ...B.values()]) if (k.includes("#")) vlanActive[k] = true;
-    for (const [tag, k] of A) if (B.has(tag)) unite(k, B.get(tag));
+    for (const [tag, k] of A) {
+      if (!B.has(tag)) continue;
+      if (segOfLink.has(l) && k.includes("#") && rootBlocked.has(`${segOfLink.get(l)}|${k.split("#")[1]}`)) continue;
+      unite(k, B.get(tag));
+    }
   }
 
   const status = (dn, ifn) => {
@@ -317,8 +479,8 @@ function compute(net) {
       const par = ifn.split(".")[0];
       return { admin: !i.shutdown, up: !i.shutdown && physUp(dn, par) };
     }
-    if (k === "po") return { admin: !i.shutdown, up: false };
-    return { admin: !i.shutdown, up: physUp(dn, ifn) };
+    if (k === "po") return { admin: !i.shutdown, up: !i.shutdown && d.ifOrder.some(n => bundle[`${dn}|${n}`] && bundle[`${dn}|${n}`].po === ifn && bundle[`${dn}|${n}`].state === "P") };
+    return { admin: !i.shutdown, up: physUp(dn, ifn) && bstate(dn, ifn) !== "s", err: i.errdisabled || null };
   };
 
   for (const dn of net.order) {
@@ -602,7 +764,7 @@ function compute(net) {
     return { ok: true, target: req.dev, hops: req.hops, back: rep.hops };
   }
 
-  const st = { net, find, status, l3, pcs, rt, nbrs, oifs, rids, owns, lookup, reach, leases: {}, vlanActive };
+  const st = { net, find, status, l3, pcs, rt, nbrs, oifs, rids, owns, lookup, reach, leases: {}, vlanActive, bundle, stp, logical };
 
   // ----- DHCP: resolve leases for hosts set to DHCP -----
   const used = new Set();

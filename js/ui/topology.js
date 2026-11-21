@@ -61,13 +61,18 @@ export class Topology {
       const k = pairKey(l), idx = (pairSeen[k] = (pairSeen[k] ?? -1) + 1), flip = l.a < l.b ? 1 : -1;
       const shift = (idx - (pairCount[k] - 1) / 2) * 34 * flip;
       const a = { ...A, x: A.x - uy * shift, y: A.y + ux * shift }, b = { ...B, x: B.x - uy * shift, y: B.y + ux * shift };
-      nodes.push(s("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "link" + (up ? " up" : " down") + (l.ai.startsWith("Serial") ? " serial" : "") }));
+      nodes.push(s("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "link" + (up ? " up" : " down") + (l.ai.startsWith("Serial") ? " serial" : "") + ((st.bundle[`${l.a}|${l.ai}`] || {}).state === "P" ? " bundled" : "") }));
       for (const [d, ifn, dir] of [[a, l.ai, 1], [b, l.bi, -1]]) {
         const sUp = st.status(d.name, ifn).up;
+        const lp = d.kind === "switch" ? st.logical(d.name, ifn) : ifn;
+        const heldIn = sUp && d.kind === "switch" ? Object.keys(st.stp[d.name] || {}).filter(v => { const p = st.stp[d.name][v].ports[lp]; return p && p.state !== "FWD"; }) : [];
+        const blocked = heldIn.length > 0;
+        const guard = blocked && heldIn.some(v => st.stp[d.name][v].ports[lp].state === "BKN");
+        const err = d.kind === "switch" && net.devs[d.name].ifaces[ifn].errdisabled;
         const r = d.kind === "switch" ? 50 : 42;
         const px = d.x + ux * dir * r, py = d.y + uy * dir * r;
-        nodes.push(s("circle", { cx: px, cy: py, r: 5, class: "port " + (sUp ? "up" : "down") },
-          s("title", {}, `${d.name} ${ifn}: ${sUp ? "up" : "down"}`)));
+        nodes.push(s("circle", { cx: px, cy: py, r: 5, class: "port " + (!sUp ? "down" : blocked ? "blocked" : "up") },
+          s("title", {}, `${d.name} ${ifn}: ${err ? "err-disabled" : !sUp ? "down" : blocked ? `up, but ${guard ? "held by root guard" : "blocked by spanning tree"} in VLAN ${heldIn.join(", ")}` : "up"}`)));
         if (!isHost(d)) {
           // label a little further along the link, nudged off the line
           const lx = d.x + ux * dir * (r + 24) - uy * 15 * dir, ly = d.y + uy * dir * (r + 24) + ux * 15 * dir;

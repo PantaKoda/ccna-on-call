@@ -244,6 +244,10 @@ export function runningConfig(d) {
   if (d.sshVersion) add(`ip ssh version ${d.sshVersion}`);
   for (const [u, x] of Object.entries(d.users)) add(`username ${u}${x.priv != null ? ` privilege ${x.priv}` : ""} ${x.kind === "secret" ? `secret 5 ${fakeHash(x.pw)}` : `password ${pw(x.pw)}`}`);
   for (const m of d.misc.filter(x => !x.startsWith("ip route") && !x.startsWith("logging") && !x.startsWith("ntp") && !x.startsWith("snmp"))) add(m);
+  if (d.stp) {
+    add(`spanning-tree mode ${d.stp.mode}`);
+    for (const v of Object.keys(d.stp.prio).map(Number).sort((x, y) => x - y)) add(`spanning-tree vlan ${v} priority ${d.stp.prio[v]}`);
+  }
   add("!");
   for (const n of d.ifOrder) {
     const i = d.ifaces[n];
@@ -261,6 +265,8 @@ export function runningConfig(d) {
       if (s.ps.violation !== "shutdown") add(` switchport port-security violation ${s.ps.violation}`);
       if (s.ps.sticky) add(" switchport port-security mac-address sticky");
       if (s.portfast) add(" spanning-tree portfast");
+      if (s.guard) add(` spanning-tree guard ${s.guard}`);
+      if (s.stpCost != null) add(` spanning-tree cost ${s.stpCost}`);
       if (s.bpduguard) add(" spanning-tree bpduguard enable");
     } else if (i.ip != null) add(` ip address ${intToIp(i.ip)} ${intToIp(i.mask)}`);
     else if (d.kind === "router" || ifKind(n) === "vlan") add(" no ip address");
@@ -319,6 +325,7 @@ export function runningConfig(d) {
 function ifStatusWords(s, d, n) {
   const st = s.net.st.status(d.name, n);
   if (!st.admin) return ["administratively down", "down"];
+  if (d.ifaces[n].errdisabled) return ["down", "down (err-disabled)"];
   return st.up ? ["up", "up"] : ["down", "down"];
 }
 
@@ -353,14 +360,15 @@ function showInterfaces(s, name) {
   return out.join("\n");
 }
 
-function accessPortsOf(d, v) {
-  return d.ifOrder.filter(n => d.ifaces[n].sw && d.ifaces[n].sw.mode !== "trunk" && d.ifaces[n].sw.accessVlan === v);
+function accessPortsOf(s, v) {
+  const d = s.dev;
+  return d.ifOrder.filter(n => d.ifaces[n].sw && d.ifaces[n].sw.mode !== "trunk" && d.ifaces[n].sw.accessVlan === v && !isBundled(s, n));
 }
 function showVlan(s) {
   const d = s.dev;
   const out = ["VLAN Name                             Status    Ports", "---- -------------------------------- --------- -------------------------------"];
   for (const v of Object.keys(d.vlans).map(Number).sort((a, b) => a - b)) {
-    const ports = accessPortsOf(d, v).map(shortIf);
+    const ports = accessPortsOf(s, v).map(shortIf);
     const rows = [];
     for (let i = 0; i < ports.length; i += 4) rows.push(ports.slice(i, i + 4).join(", "));
     out.push(`${pad(v, 4)} ${pad(d.vlans[v].name, 32)} ${pad("active", 9)} ${rows[0] || ""}`);
@@ -372,7 +380,7 @@ function showVlan(s) {
 
 function trunkPorts(s) {
   const d = s.dev;
-  return d.ifOrder.filter(n => d.ifaces[n].sw && d.ifaces[n].sw.mode === "trunk" && s.net.st.status(d.name, n).up);
+  return d.ifOrder.filter(n => d.ifaces[n].sw && d.ifaces[n].sw.mode === "trunk" && s.net.st.status(d.name, n).up && !isBundled(s, n));
 }
 function showTrunk(s) {
   const d = s.dev, ports = trunkPorts(s);
@@ -397,8 +405,10 @@ function showIntStatus(s) {
     const i = d.ifaces[n];
     if (!i.sw) continue;
     const st = s.net.st.status(d.name, n);
-    const gig = n.startsWith("Gig");
-    out.push(`${pad(shortIf(n), 9)} ${pad(i.desc.slice(0, 18), 18)} ${pad(!st.admin ? "disabled" : st.up ? "connected" : "notconnect", 12)} ${pad(i.sw.mode === "trunk" ? "trunk" : i.sw.accessVlan, 10)} ${pad(st.up ? "a-full" : "auto", 7)} ${pad(st.up ? (gig ? "a-1000" : "a-100") : "auto", 6)} ${gig ? "10/100/1000BaseTX" : "10/100BaseTX"}`);
+    const po = ifKind(n) === "po";
+    // a port-channel runs at the speed of its member ports and has no media type of its own
+    const gig = po ? d.ifOrder.some(m => m.startsWith("Gig") && (s.net.st.bundle[d.name + "|" + m] || {}).po === n) : n.startsWith("Gig");
+    out.push(`${pad(shortIf(n), 9)} ${pad(i.desc.slice(0, 18), 18)} ${pad(!st.admin ? "disabled" : i.errdisabled ? "err-disabled" : st.up ? "connected" : (s.net.st.bundle[d.name + "|" + n] || {}).state === "s" ? "suspended" : "notconnect", 12)} ${pad(i.sw.mode === "trunk" ? "trunk" : i.sw.accessVlan, 10)} ${pad(st.up ? "a-full" : "auto", 7)} ${pad(st.up ? (gig ? "a-1000" : "a-100") : "auto", 6)} ${po ? "" : gig ? "10/100/1000BaseTX" : "10/100BaseTX"}`.trimEnd());
   }
   return out.join("\n");
 }
@@ -585,18 +595,85 @@ function showPortSec(s, name) {
   return out.join("\n");
 }
 
-function showSpanningTree(s) {
-  const d = s.dev, out = [];
+// is this port a member that is bundled into a port-channel right now?
+const isBundled = (s, n) => { const b = s.net.st.bundle[`${s.dev.name}|${n}`]; return !!b && b.state === "P"; };
+const vlanTag = v => `VLAN${String(v).padStart(4, "0")}`;
+
+// Every up port that carries VLAN v, as spanning tree sees it: a bundled
+// member is represented by its port-channel.
+function stpPorts(s, v) {
+  const d = s.dev, st = s.net.st, tree = st.stp[d.name][v];
+  const rows = [];
+  for (const n of d.ifOrder) {
+    const i = d.ifaces[n];
+    if (!i.sw || !st.status(d.name, n).up || isBundled(s, n)) continue;
+    const carries = i.sw.mode === "trunk" ? !i.sw.allowed || i.sw.allowed.includes(v) : i.sw.accessVlan === v;
+    if (!carries) continue;
+    const known = tree && tree.ports[n];
+    const cost = i.sw.stpCost ?? (n.startsWith("Gig") ? 4 : n.startsWith("Port") ? 3 : 19);
+    rows.push({ n, ...(known || { role: "Desg", state: "FWD", cost }), edge: !known && i.sw.portfast });
+  }
+  return rows;
+}
+
+function showSpanningTree(s, only) {
+  const d = s.dev, st = s.net.st, out = [];
   for (const v of Object.keys(d.vlans).map(Number).sort((a, b) => a - b)) {
-    const ports = d.ifOrder.filter(n => {
-      const i = d.ifaces[n];
-      if (!i.sw || !s.net.st.status(d.name, n).up) return false;
-      return i.sw.mode === "trunk" ? !i.sw.allowed || i.sw.allowed.includes(v) : i.sw.accessVlan === v;
-    });
-    if (!ports.length) continue;
-    out.push(`VLAN${String(v).padStart(4, "0")}`, "  Spanning tree enabled protocol ieee", `  Root ID    Priority    ${32768 + v}`, `             Address     ${fakeMac(d.name, 99)}`, "", "Interface           Role Sts Cost      Prio.Nbr Type", "------------------- ---- --- --------- -------- --------------------------------");
-    for (const n of ports) out.push(`${pad(shortIf(n), 19)} Desg FWD ${pad(n.startsWith("Gig") ? 4 : 19, 9)} 128.${pad(d.ifOrder.indexOf(n) + 1, 4)} ${d.ifaces[n].sw.portfast ? "P2p Edge" : "P2p"}`);
+    if (only != null && v !== only) continue;
+    const rows = stpPorts(s, v);
+    if (!rows.length) continue;
+    const own = { prio: (d.stp.prio[v] ?? 32768) + v, mac: fakeMac(d.name, 99) };
+    const tree = st.stp[d.name][v] || { root: { dev: d.name, ...own }, cost: 0, rootPort: null };
+    out.push(vlanTag(v), `  Spanning tree enabled protocol ${d.stp.mode === "rapid-pvst" ? "rstp" : "ieee"}`,
+      `  Root ID    Priority    ${tree.root.prio}`, `             Address     ${tree.root.mac}`);
+    if (tree.root.dev === d.name) out.push("             This bridge is the root");
+    else out.push(`             Cost        ${tree.cost}`, `             Port        ${d.ifOrder.indexOf(tree.rootPort) + 1} (${tree.rootPort})`);
+    out.push("             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec", "",
+      `  Bridge ID  Priority    ${own.prio}  (priority ${own.prio - v} sys-id-ext ${v})`, `             Address     ${own.mac}`, "",
+      "Interface           Role Sts Cost      Prio.Nbr Type", "------------------- ---- --- --------- -------- --------------------------------");
+    for (const r of rows) {
+      out.push(`${pad(shortIf(r.n), 19)} ${pad(r.role, 4)} ${pad(r.state + (r.note ? "*" : ""), 4)}${pad(r.cost, 9)} 128.${pad(d.ifOrder.indexOf(r.n) + 1, 4)} ${r.edge ? "P2p Edge" : "P2p"}${r.note ? " " + r.note : ""}`);
+    }
     out.push("");
+  }
+  if (!out.length) return only != null ? `Spanning tree instance(s) for vlan ${only} does not exist.` : "No spanning tree instance exists.";
+  return out.join("\n");
+}
+
+function showStpSummary(s) {
+  const d = s.dev, st = s.net.st;
+  const vlans = Object.keys(d.vlans).map(Number).sort((a, b) => a - b).filter(v => stpPorts(s, v).length);
+  const mine = vlans.filter(v => !st.stp[d.name][v] || st.stp[d.name][v].root.dev === d.name);
+  const out = [`Switch is in ${d.stp.mode} mode`, `Root bridge for: ${mine.length ? mine.map(vlanTag).join(", ") : "none"}`, "",
+    "Name                   Blocking Listening Learning Forwarding STP Active", "---------------------- -------- --------- -------- ---------- ----------"];
+  for (const v of vlans) {
+    const rows = stpPorts(s, v), blk = rows.filter(r => r.state !== "FWD").length;
+    out.push(`${pad(vlanTag(v), 22)} ${String(blk).padStart(8)} ${"0".padStart(9)} ${"0".padStart(8)} ${String(rows.length - blk).padStart(10)} ${String(rows.length).padStart(10)}`);
+  }
+  return out.join("\n");
+}
+
+function showStpInconsistent(s) {
+  const d = s.dev, st = s.net.st, rows = [];
+  for (const v of Object.keys(d.vlans).map(Number).sort((a, b) => a - b)) {
+    for (const [n, p] of Object.entries((st.stp[d.name][v] || { ports: {} }).ports)) if (p.note) rows.push(`${pad(vlanTag(v), 20)} ${pad(n, 24)} Root Inconsistent`);
+  }
+  return ["Name                 Interface                Inconsistency", "-------------------- ------------------------ ------------------", ...rows, "",
+    `Number of inconsistent ports (segments) in the system : ${rows.length}`].join("\n");
+}
+
+const CHANNEL_PROTO = { active: "LACP", passive: "LACP", desirable: "PAgP", auto: "PAgP", on: "-" };
+function showEtherchannel(s) {
+  const d = s.dev, st = s.net.st, groups = {};
+  for (const n of d.ifOrder) { const c = d.ifaces[n].channel; if (c) (groups[c.id] ||= []).push(n); }
+  const ids = Object.keys(groups).map(Number).sort((a, b) => a - b);
+  const out = ["Flags:  D - down        P - bundled in port-channel", "        I - stand-alone s - suspended", "        R - Layer3      S - Layer2", "        U - in use", "",
+    `Number of channel-groups in use: ${ids.length}`, `Number of aggregators:           ${ids.length}`, "",
+    "Group  Port-channel  Protocol    Ports", "------+-------------+-----------+-----------------------------------------------"];
+  for (const id of ids) {
+    const members = groups[id].map(n => { const b = st.bundle[`${d.name}|${n}`]; return `${shortIf(n)}(${b ? b.state : "D"})`; });
+    const inUse = groups[id].some(n => isBundled(s, n));
+    out.push(`${pad(id, 6)} ${pad(`Po${id}(S${inUse ? "U" : "D"})`, 15)} ${pad(CHANNEL_PROTO[d.ifaces[groups[id][0]].channel.mode], 9)} ${members.map(m => pad(m, 11)).join(" ")}`.trimEnd());
   }
   return out.join("\n");
 }
@@ -950,7 +1027,12 @@ show("cdp neighbors", showCdp);
 show("version", showVersion);
 show("port-security", s => showPortSec(s), ["switch"]);
 show("port-security interface <if>", showPortSec, ["switch"]);
-show("spanning-tree", showSpanningTree, ["switch"]);
+show("spanning-tree", s => showSpanningTree(s), ["switch"]);
+show("spanning-tree vlan <num>", showSpanningTree, ["switch"]);
+show("spanning-tree summary", showStpSummary, ["switch"]);
+show("spanning-tree inconsistentports", showStpInconsistent, ["switch"]);
+show("etherchannel summary", showEtherchannel, ["switch"]);
+show("etherchannel", showEtherchannel, ["switch"]);
 show("arp", showArp);
 show("ip arp", showArp);
 show("history", s => s.history.map(h => "  " + h).join("\n"));
@@ -1046,7 +1128,10 @@ reg("config", "interface range <rest>", (s, r) => {
   s.mode = "if";
   s.ctx = { ifs: names };
 });
-reg("config", "no interface <if>", (s, n) => { if (!removeIface(s.dev, n)) return "% Removal of physical interfaces is not permitted."; });
+reg("config", "no interface <if>", (s, n) => {
+  if (ifKind(n) === "po") for (const m of s.dev.ifOrder.map(x => s.dev.ifaces[x])) if (m.channel && `Port-channel${m.channel.id}` === n) m.channel = null;
+  if (!removeIface(s.dev, n)) return "% Removal of physical interfaces is not permitted.";
+});
 
 reg("config", "vlan <word>", (s, w) => {
   const list = parseVlanList(w);
@@ -1218,9 +1303,34 @@ reg("config", "cdp run", unmisc("no cdp run"));
 reg("config", "no cdp run", misc("no cdp run"));
 reg("config", "lldp run", misc("lldp run"));
 reg("config", "no lldp run", unmisc("lldp run"));
-reg("config", "spanning-tree mode <word>", (s, w) => { unmisc("spanning-tree mode")(s); misc("spanning-tree mode " + w)(s); }, ["switch"]);
+reg("config", "spanning-tree mode pvst|rapid-pvst", (s, m) => { s.dev.stp.mode = m; }, ["switch"]);
+const PRIORITIES = Array.from({ length: 16 }, (_, i) => i * 4096);
+reg("config", "spanning-tree vlan <word> priority <num>", (s, list, n) => {
+  const vlans = parseVlanList(list);
+  if (!vlans) return INVALID;
+  if (!PRIORITIES.includes(n)) return "% Bridge Priority must be in increments of 4096.\n% Allowed values are:\n  " + PRIORITIES.join(" ");
+  for (const v of vlans) s.dev.stp.prio[v] = n;
+}, ["switch"]);
+// "root primary" picks a priority that beats the current root; "root secondary" is a fixed 28672
+reg("config", "spanning-tree vlan <word> root primary|secondary", (s, list, which) => {
+  const vlans = parseVlanList(list);
+  if (!vlans) return INVALID;
+  const d = s.dev, failed = [];
+  for (const v of vlans) {
+    if (which === "secondary") { d.stp.prio[v] = 28672; continue; }
+    const tree = s.net.st.stp[d.name][v];
+    const mine = d.stp.prio[v] ?? 32768;
+    if (!tree || tree.root.dev === d.name) { d.stp.prio[v] = Math.min(mine, 24576); continue; }
+    const current = tree.root.prio - v;
+    if (current > 24576) d.stp.prio[v] = 24576;
+    else if (current >= 4096) d.stp.prio[v] = current - 4096;
+    else failed.push(v);
+  }
+  if (failed.length) return `% Failed to make the bridge root for vlan ${failed.join(",")}\n% The current root already has priority 0. Raise that switch's priority, or set this one to 0.`;
+}, ["switch"]);
+reg("config", "no spanning-tree vlan <word> priority", (s, list) => { for (const v of parseVlanList(list) || []) delete s.dev.stp.prio[v]; }, ["switch"]);
+reg("config", "no spanning-tree vlan <word> root", (s, list) => { for (const v of parseVlanList(list) || []) delete s.dev.stp.prio[v]; }, ["switch"]);
 reg("config", "spanning-tree portfast default", misc("spanning-tree portfast default"), ["switch"]);
-reg("config", "spanning-tree vlan <rest>", (s, r) => misc("spanning-tree vlan " + r)(s), ["switch"]);
 reg("config", "ipv6 unicast-routing", misc("ipv6 unicast-routing"), ["router"]);
 
 // ---------------------------------------------------------------- line config
@@ -1247,7 +1357,7 @@ reg("line", "history size <num>", (s, n) => lineMisc(s, `history size ${n}`, "hi
 // ---------------------------------------------------------------- interface config
 const each = (s, fn) => { for (const i of s.ifs) { const r = fn(i); if (r) return r; } };
 
-reg("if", "shutdown", s => each(s, i => { i.shutdown = true; }));
+reg("if", "shutdown", s => each(s, i => { i.shutdown = true; i.errdisabled = null; }));
 reg("if", "no shutdown", s => each(s, i => { i.shutdown = false; }));
 reg("if", "description <rest>", (s, r) => each(s, i => { i.desc = r; }));
 reg("if", "no description", s => each(s, i => { i.desc = ""; }));
@@ -1277,7 +1387,14 @@ reg("if", "no cdp enable", () => {});
 
 // switchport
 const swOnly = ["switch"];
-const sw = (s, fn) => each(s, i => (i.sw ? fn(i.sw, i) : "% Command rejected: not a switching port."));
+const membersOf = (d, po) => d.ifOrder.map(n => d.ifaces[n]).filter(m => m.channel && `Port-channel${m.channel.id}` === po);
+// layer 2 settings typed on a port-channel are copied to its member ports, as IOS does
+const sw = (s, fn) => each(s, i => {
+  if (!i.sw) return "% Command rejected: not a switching port.";
+  const r = fn(i.sw, i);
+  if (!r && ifKind(i.name) === "po") for (const m of membersOf(s.dev, i.name)) fn(m.sw, m);
+  return r;
+});
 reg("if", "switchport", () => {}, swOnly);
 reg("if", "switchport mode access|trunk", (s, m) => sw(s, x => { x.mode = m; }), swOnly);
 reg("if", "switchport mode dynamic auto|desirable", s => sw(s, x => { x.mode = null; }), swOnly);
@@ -1323,8 +1440,29 @@ reg("if", "no spanning-tree portfast", s => sw(s, x => { x.portfast = false; }),
 reg("if", "spanning-tree bpduguard enable", s => sw(s, x => { x.bpduguard = true; }), swOnly);
 reg("if", "no spanning-tree bpduguard enable", s => sw(s, x => { x.bpduguard = false; }), swOnly);
 reg("if", "spanning-tree bpduguard disable", s => sw(s, x => { x.bpduguard = false; }), swOnly);
-reg("if", "channel-group <num> mode active|passive|on|desirable|auto", (s, id, mode) => each(s, i => { i.channel = { id, mode }; }));
-reg("if", "no channel-group", s => each(s, i => { i.channel = null; }));
+reg("if", "channel-group <num> mode active|passive|on|desirable|auto", (s, id, mode) => {
+  if (id < 1 || id > 6) return "% Invalid group number: this switch supports channel groups 1 to 6.";
+  const d = s.dev, name = `Port-channel${id}`;
+  for (const i of s.ifs) if (!i.sw || ifKind(i.name) !== "phys") return "% Command rejected: only physical switch ports can join a channel group.";
+  const existing = membersOf(d, name).find(m => !s.ifs.includes(m));
+  if (existing && CHANNEL_PROTO[existing.channel.mode] !== CHANNEL_PROTO[mode]) {
+    return `% Command rejected (${name}): mode ${mode} does not match the protocol of ${shortIf(existing.name)}, which is already in this group as ${existing.channel.mode}.`;
+  }
+  const fresh = !d.ifaces[name];
+  const po = ensureIface(d, name);
+  if (fresh) {                                  // a new port-channel starts with the first member's settings
+    const from = s.ifs[0].sw;
+    Object.assign(po.sw, { mode: from.mode, accessVlan: from.accessVlan, allowed: from.allowed ? [...from.allowed] : null, native: from.native });
+  }
+  for (const i of s.ifs) i.channel = { id, mode };
+  if (fresh) return `Creating a port-channel interface Port-channel ${id}`;
+}, swOnly);
+reg("if", "no channel-group", s => each(s, i => { i.channel = null; }), swOnly);
+reg("if", "spanning-tree guard root|loop|none", (s, g) => sw(s, x => { x.guard = g === "none" ? null : g; }), swOnly);
+reg("if", "no spanning-tree guard", s => sw(s, x => { x.guard = null; }), swOnly);
+reg("if", "no spanning-tree guard root|loop", s => sw(s, x => { x.guard = null; }), swOnly);
+reg("if", "spanning-tree cost <num>", (s, n) => sw(s, x => { x.stpCost = n; }), swOnly);
+reg("if", "no spanning-tree cost", s => sw(s, x => { x.stpCost = null; }), swOnly);
 
 // router interface features
 const rOnly = ["router"];
@@ -1364,6 +1502,7 @@ export function applyConfig(net, devName, lines) {
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
+    net.touch();
     const out = s.pending ? (() => { const p = s.pending; s.pending = null; return p.fn(line) || ""; })() : s.run(line) || "";
     if (/% (Invalid|Incomplete|Ambiguous)|overlaps with|rejected|Bad mask|Inconsistent|illegal/.test(out)) errors.push(`${devName}: "${line}" -> ${out.trim()}`);
   }

@@ -58,7 +58,7 @@ export function mountLab(root, level, { onDone, actions = [], note = null, badge
       h("section", { class: "window win-ticket", "aria-label": "Ticket" }, winTitle("Ticket", level.title), ticket),
       h("section", { class: "window win-map", "aria-label": "Network map" },
         winTitle("Network map", "click a device to open its console",
-          h("span", { class: "legend" }, h("i", { class: "dot up" }), "up", h("i", { class: "dot down" }), "down")),
+          h("span", { class: "legend" }, h("i", { class: "dot up" }), "up", h("i", { class: "dot blocked" }), "blocked", h("i", { class: "dot down" }), "down")),
         h("div", { class: "win-body map-body" }, topo.el)),
       h("section", { class: "window win-console", "aria-label": "Console" },
         winTitle("Console", null, statTime, statCmds, h("button", { class: "btn ghost small", onclick: resetLab }, "Reset lab")),

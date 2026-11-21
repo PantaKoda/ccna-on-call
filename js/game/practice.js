@@ -210,7 +210,215 @@ export function relayLab({ site, hq, br, w, ex, dns, fault }) {
   };
 }
 
+// ---------------------------------------------------------------- spanning tree
+// Two distribution switches and one access switch in a triangle. Shared by the
+// story lab, its build variants and its troubleshooting variants.
+const listOf = a => (a.length === 1 ? String(a[0]) : `${a.slice(0, -1).join(", ")} and ${a[a.length - 1]}`);
+const portName = p => p[0].toUpperCase() + p.slice(1);
+const TRI = ["DSW1", "DSW2", "ASW1"];
+const otherDsw = d => (d === "DSW1" ? "DSW2" : "DSW1");
+function stpTriangle(site, [a, b], extra) {
+  const base = [`vlan ${a.id}`, `name ${a.name}`, `vlan ${b.id}`, `name ${b.name}`, "exit"];
+  const up = ["g0/1", "g0/2"].flatMap(p => [`interface ${p}`, "switchport mode trunk", `switchport trunk allowed vlan ${a.id},${b.id}`]);
+  const acc = (p, v) => [`interface ${p}`, "switchport mode access", `switchport access vlan ${v}`];
+  const srv = (name, x, v) => ({ name, kind: "server", x, y: 270, note: v.name, ip: { mode: "static", ip: `192.168.${v.id}.5`, mask: M24 } });
+  return {
+    devices: [
+      { name: "DSW1", kind: "switch", hostname: `${site}-DSW1`, x: 300, y: 110, config: [...base, ...up, ...acc("fa0/1", a.id), "exit", ...extra.DSW1] },
+      { name: "DSW2", kind: "switch", hostname: `${site}-DSW2`, x: 700, y: 110, config: [...base, ...up, ...acc("fa0/1", b.id), "exit", ...extra.DSW2] },
+      { name: "ASW1", kind: "switch", hostname: `${site}-ASW1`, x: 500, y: 290, config: [...base, ...up, ...acc("fa0/1", a.id), ...acc("fa0/2", b.id), "exit", ...extra.ASW1] },
+      srv("SRV-A", 110, a), srv("SRV-B", 890, b),
+      pc("PC-A", 380, 450, `192.168.${a.id}.11`, M24), pc("PC-B", 620, 450, `192.168.${b.id}.11`, M24),
+    ],
+    links: ["DSW1:g0/1 DSW2:g0/1", "DSW1:g0/2 ASW1:g0/1", "DSW2:g0/2 ASW1:g0/2", "DSW1:fa0/1 SRV-A", "DSW2:fa0/1 SRV-B", "ASW1:fa0/1 PC-A", "ASW1:fa0/2 PC-B"],
+  };
+}
+const EDGE = ["interface range fa0/1 - 2", "spanning-tree portfast", "spanning-tree bpduguard enable", "exit"];
+const stpPings = ([a, b]) => C.all(C.ping("PC-A", `192.168.${a.id}.5`), C.ping("PC-B", `192.168.${b.id}.5`));
+
+// Put the root bridge where the design wants it.
+//   roots - which distribution switch must be root for each VLAN, e.g. { 10: "DSW1", 20: "DSW2" }
+//   left  - the priority somebody left on the access switch
+//   exact - null to leave the method to the player, or { primary, secondary }: priorities the ticket demands
+//   guard - also ask for root guard on the distribution ports that face the access switch
+export function stpLab({ site, vlans, roots, left, exact, guard }) {
+  const [a, b] = vlans, ids = [a.id, b.id], vl = ids.join(","), Site = cap(site.toLowerCase());
+  const byRoot = d => ids.filter(v => roots[v] === d);
+  const rootsUsed = ["DSW1", "DSW2"].filter(d => byRoot(d).length), split = rootsUsed.length === 2;
+  const alt = v => (roots[v] === "DSW1" ? "g0/2" : "g0/1");          // ASW1's uplink to the switch that is not the root
+  const setPrio = (d, mine) => {
+    const v = (mine ? byRoot(d) : byRoot(otherDsw(d))).join(",");
+    if (!v) return [];
+    return [exact ? `spanning-tree vlan ${v} priority ${mine ? exact.primary : exact.secondary}` : `spanning-tree vlan ${v} root ${mine ? "primary" : "secondary"}`];
+  };
+  const dsw = d => [...cfg("spanning-tree mode rapid-pvst", ...setPrio(d, true), ...setPrio(d, false), ...(guard ? ["interface g0/2", "spanning-tree guard root"] : [])), "show spanning-tree", "write memory"];
+  const plan = split
+    ? `**DSW1** is the root for VLAN ${listOf(byRoot("DSW1"))} and the backup for VLAN ${listOf(byRoot("DSW2"))}; **DSW2** is the other way round. Each VLAN then uses a different uplink from the access switch, so both cables carry traffic`
+    : `**${rootsUsed[0]}** is the root for VLAN ${listOf(ids)}, and **${otherDsw(rootsUsed[0])}** takes over if it fails`;
+  return {
+    subject: `${Site}: the smallest switch in the building is the spanning tree root`,
+    brief: [`Something odd showed up at the ${Site} site: traffic between the two distribution switches takes the long way round, through the access switch, and the direct link between them carries nothing. \`show spanning-tree\` explains it. **ASW1** is the root bridge: somebody set a low priority on it during a test and never took it off.`,
+      `Put the root where the design wants it: ${plan}. Return ASW1 to the default priority, and move all three switches to **Rapid PVST+** while you are there.${exact ? ` The design document gives exact priorities: **${exact.primary}** for a root and **${exact.secondary}** for its backup.` : ""}`,
+      ...(guard ? ["Then make sure it cannot happen again: put **root guard** on the distribution ports that face the access switch, so nothing plugged in below them can take the root over."] : [])],
+    details: [["Switches", "DSW1 and DSW2 (distribution), ASW1 (access)"], ["VLANs", `${a.id} (${a.name}) and ${b.id} (${b.name})`], ["Spanning tree mode", "Rapid PVST+ on all three"],
+      ...rootsUsed.map(d => [`VLAN ${listOf(byRoot(d))}`, `root ${d}${exact ? ` (priority ${exact.primary})` : ""}, backup ${otherDsw(d)}${exact ? ` (priority ${exact.secondary})` : ""}`]),
+      ["ASW1", "default priority (32768) in both VLANs"], guard && ["Root guard", "G0/2 of DSW1 and G0/2 of DSW2 (they face ASW1)"],
+      ["Useful", "show spanning-tree vlan <id> · show spanning-tree summary"]].filter(Boolean),
+    topology: stpTriangle(site, vlans, { DSW1: [], DSW2: [], ASW1: [...EDGE, `spanning-tree vlan ${vl} priority ${left}`] }),
+    objectives: [
+      { text: "All three switches run Rapid PVST+", check: C.stpMode(TRI, "rapid-pvst") },
+      ...rootsUsed.map(d => ({ text: `${d} is the root bridge for VLAN ${listOf(byRoot(d))}${exact ? `, with priority ${exact.primary}` : ""}`,
+        check: C.all(...byRoot(d).flatMap(v => [C.stpRoot(d, v), ...(exact ? [C.stpPriority(d, v, exact.primary)] : [])])) })),
+      ...rootsUsed.map(d => ({ text: `${otherDsw(d)} is next in line for VLAN ${listOf(byRoot(d))}${exact ? `, with priority ${exact.secondary}` : `: it becomes the root if ${d} fails`}`,
+        check: C.all(...byRoot(d).flatMap(v => [C.stpRoot(d, v), C.stpBackup(otherDsw(d), v), ...(exact ? [C.stpPriority(otherDsw(d), v, exact.secondary)] : [])])) })),
+      { text: `ASW1 is back on the default priority (32768) for VLAN ${listOf(ids)}`, check: C.all(...ids.map(v => C.stpPriority("ASW1", v, 32768))) },
+      { text: `The blocked port is now on the access switch: ASW1 blocks ${split ? ids.map(v => `${portName(alt(v))} in VLAN ${v}`).join(" and ") : `${portName(alt(a.id))} in both VLANs`}`,
+        check: C.all(...ids.map(v => C.stpRole("ASW1", alt(v), v, "Altn"))) },
+      guard && { text: "Root guard is on G0/2 of DSW1 and of DSW2, and no port is root-inconsistent", check: C.all(C.rootGuardOnly({ DSW1: ["g0/2"], DSW2: ["g0/2"], ASW1: [] }), C.stpClean(TRI)) },
+      { text: "PC-A still reaches SRV-A, and PC-B still reaches SRV-B", check: stpPings(vlans) },
+      { text: "Save all three switches", check: C.all(...TRI.map(d => C.savedChanged(d))) },
+    ].filter(Boolean),
+    hints: [`\`show spanning-tree vlan ${a.id}\` names the root bridge in its first block and the switch you are on in the second. The lowest bridge ID wins: priority first, then MAC address. Every VLAN has its own tree, so look at VLAN ${b.id} as well.`,
+      exact
+        ? `\`spanning-tree vlan <list> priority <n>\` sets a priority directly, in multiples of 4096. \`no spanning-tree vlan ${vl} priority\` on ASW1 returns it to 32768. The mode is the global command \`spanning-tree mode rapid-pvst\`.`
+        : `On the switch that must be root: \`spanning-tree vlan <list> root primary\`. On its backup: \`spanning-tree vlan <list> root secondary\`. \`root primary\` chooses a priority below the current root's, so clear ASW1 first with \`no spanning-tree vlan ${vl} priority\`: if the current root sits at 0, nothing can go below it and the command says so.`,
+      guard
+        ? "Root guard is an interface command: `spanning-tree guard root` on G0/2 of each distribution switch. A port that turns root-inconsistent is still hearing a better bridge ID from below; `show spanning-tree inconsistentports` lists them."
+        : "`show spanning-tree vlan <id>` on ASW1 lists each port's role: Root is the uplink in use and Altn is the blocked one. Finish by saving all three switches."],
+    solution: [
+      { on: "ASW1", cmds: [...cfg("spanning-tree mode rapid-pvst", `no spanning-tree vlan ${vl} priority`), "write memory"] },
+      { on: "DSW1", cmds: dsw("DSW1") }, { on: "DSW2", cmds: dsw("DSW2") },
+    ],
+  };
+}
+
+// The same triangle after a hardening change landed on the wrong ports. One fault:
+//   guard-uplink - root guard is on the access switch's uplinks instead of the distribution ports facing it
+//   bpdu-uplink  - PortFast and BPDU guard are on the access switch's uplinks instead of its PC ports
+//   guard-core   - root guard is on the link between the distribution switches instead of the port facing ASW1
+export function stpGuardLab({ site, vlans, root, fault }) {
+  const [a, b] = vlans, ids = [a.id, b.id], vl = ids.join(","), sec = otherDsw(root), Site = cap(site.toLowerCase());
+  const alt = root === "DSW1" ? "g0/2" : "g0/1";
+  const guardOn = p => [`interface ${p}`, "spanning-tree guard root", "exit"];
+  const dsw = d => ["spanning-tree mode rapid-pvst", `spanning-tree vlan ${vl} priority ${d === root ? 24576 : 28672}`,
+    ...(fault === "guard-uplink" ? [] : guardOn(fault === "guard-core" && d === sec ? "g0/1" : "g0/2"))];
+  const asw = ["spanning-tree mode rapid-pvst",
+    ...(fault === "bpdu-uplink" ? ["interface range g0/1 - 2", "spanning-tree portfast", "spanning-tree bpduguard enable", "exit"] : EDGE),
+    ...(fault === "guard-uplink" ? ["interface range g0/1 - 2", "spanning-tree guard root", "exit"] : [])];
+  const fix = {
+    "guard-uplink": [{ on: "ASW1", cmds: [...cfg("interface range g0/1 - 2", "no spanning-tree guard root"), "write memory"] },
+      ...["DSW1", "DSW2"].map(d => ({ on: d, cmds: [...cfg("interface g0/2", "spanning-tree guard root"), "show spanning-tree inconsistentports", "write memory"] }))],
+    "bpdu-uplink": [{ on: "ASW1", cmds: ["enable", "show interfaces status", "configure terminal", "interface range g0/1 - 2", "no spanning-tree portfast", "no spanning-tree bpduguard enable", "shutdown", "no shutdown",
+      "interface range fa0/1 - 2", "spanning-tree portfast", "spanning-tree bpduguard enable", "end", "write memory"] }],
+    "guard-core": [{ on: sec, cmds: ["enable", "show spanning-tree inconsistentports", "configure terminal", "interface g0/1", "no spanning-tree guard root", "interface g0/2", "spanning-tree guard root", "end", "write memory"] }],
+  };
+  const outage = fault !== "guard-core";
+  return {
+    subject: outage ? `${Site}: the access switch dropped off the network after last night's change` : `${Site}: a port is stuck in "root inconsistent" since last night's change`,
+    brief: [`A hardening change went in at the ${Site} site last night: root guard on the distribution switches, PortFast and BPDU guard on the PC ports. It was pasted in by hand, and something landed on the wrong port. ${outage ? "Since then PC-A and PC-B reach nothing beyond their own switch." : "Nothing is down, but monitoring shows a blocked port between the two distribution switches, and their traffic is taking the long way through ASW1."}`,
+      "Find what sits on the wrong port, take it off there, and put it where the design below says it belongs. Do not remove protection from the right ports to make the symptom go away."],
+    details: [["Root bridge", `${root} for VLAN ${listOf(ids)}, backup ${sec} (already set)`], ["Root guard", "belongs on G0/2 of DSW1 and G0/2 of DSW2: the ports facing the access switch"],
+      ["Edge protection", "PortFast and BPDU guard belong on Fa0/1 and Fa0/2 of ASW1: the PC ports"], ["Cabling", "DSW1 G0/1 to DSW2 G0/1 · DSW1 G0/2 to ASW1 G0/1 · DSW2 G0/2 to ASW1 G0/2"],
+      ["Useful", "show interfaces status · show spanning-tree inconsistentports · show running-config"]],
+    topology: stpTriangle(site, vlans, { DSW1: dsw("DSW1"), DSW2: dsw("DSW2"), ASW1: asw }),
+    objectives: [
+      { text: "No port on the three switches is err-disabled or root-inconsistent", check: C.stpClean(TRI) },
+      { text: "Root guard is on G0/2 of DSW1 and of DSW2, and on no other port", check: C.rootGuardOnly({ DSW1: ["g0/2"], DSW2: ["g0/2"], ASW1: [] }) },
+      { text: "PortFast and BPDU guard are on ASW1's PC ports (Fa0/1 and Fa0/2) and on no uplink", check: C.edgeOnly("ASW1", ["fa0/1", "fa0/2"]) },
+      { text: `${root} is the root bridge for both VLANs, and the only blocked port is ASW1 ${portName(alt)}`, check: C.all(...ids.flatMap(v => [C.stpRoot(root, v), C.stpRole("ASW1", alt, v, "Altn")])) },
+      { text: "PC-A reaches SRV-A, and PC-B reaches SRV-B", check: stpPings(vlans) },
+      { text: "Save every switch you changed", check: C.savedIfChanged(TRI) },
+    ],
+    hints: ["Two commands find a port that spanning tree protection has stopped. `show interfaces status` marks a port `err-disabled` (that is BPDU guard), and `show spanning-tree inconsistentports` lists the ports root guard is holding. Run both on each switch.",
+      "Root guard belongs where the root must never appear, so never on a port that leads *towards* the root. BPDU guard belongs where no switch must ever appear, so never on an uplink. Compare `show running-config` on each switch with the design in the ticket.",
+      "Remove with `no spanning-tree guard root`, `no spanning-tree portfast` and `no spanning-tree bpduguard enable`, in interface mode. A port that BPDU guard disabled stays down until you bounce it: `shutdown`, then `no shutdown`."],
+    solution: fix[fault],
+  };
+}
+
+// ---------------------------------------------------------------- EtherChannel
+// Two switches joined by two or three parallel cables. `fault` is null for the
+// build version (separate trunks, so spanning tree blocks all but one), or
+// names what is wrong with a channel that already exists:
+//   passive - both ends are LACP passive, so nobody starts the negotiation
+//   on      - SW2 is forced "on" while SW1 speaks LACP
+//   pagp    - SW2 uses a PAgP mode
+//   missing - one cable on SW2 was never put in the group
+//   allowed - SW2's port-channel does not allow the second VLAN
+//   shut    - one member port on SW1 is shut down
+export function channelLab({ site, vlans, ports, group, fault }) {
+  const [a, b] = vlans, ids = [a.id, b.id], vl = ids.join(","), n = ports.length, Site = cap(site.toLowerCase());
+  const names = listOf(ports.map(portName)), range = `${ports[0]} - ${ports[n - 1].split("/")[1]}`, last = ports[n - 1];
+  const speed = ports[0].startsWith("g") ? "gigabit" : "100 Mb/s", words = ["", "", "two", "three"][n];
+  const base = [`vlan ${a.id}`, `name ${a.name}`, `vlan ${b.id}`, `name ${b.name}`, "exit", "interface fa0/1", "switchport mode access", `switchport access vlan ${a.id}`,
+    "interface fa0/2", "switchport mode access", `switchport access vlan ${b.id}`, "exit"];
+  const trunk = p => [`interface ${p}`, "switchport mode trunk", ...(fault ? [`switchport trunk allowed vlan ${vl}`] : [])];
+  const member = (p, mode) => [...trunk(p), `channel-group ${group} mode ${mode}`];
+  const sw1 = fault ? [...ports.flatMap(p => member(p, fault === "passive" ? "passive" : "active")), ...(fault === "shut" ? [`interface ${ports[0]}`, "shutdown"] : [])] : ports.flatMap(trunk);
+  const sw2 = fault
+    ? [...ports.flatMap(p => (fault === "missing" && p === last ? trunk(p) : member(p, fault === "on" ? "on" : fault === "pagp" ? "desirable" : "passive"))),
+      ...(fault === "allowed" ? [`interface port-channel ${group}`, `switchport trunk allowed vlan ${a.id}`] : [])]
+    : ports.flatMap(trunk);
+  const build = mode => [...cfg(`interface range ${range}`, `channel-group ${group} mode ${mode}`, "exit", `interface port-channel ${group}`, "switchport mode trunk", `switchport trunk allowed vlan ${vl}`), "show etherchannel summary", "write memory"];
+  const one = (on, ...cmds) => [{ on, cmds: ["enable", "show etherchannel summary", "configure terminal", ...cmds, "end", "show etherchannel summary", "write memory"] }];
+  const fix = {
+    passive: one("SW1", `interface range ${range}`, `channel-group ${group} mode active`),
+    on: one("SW2", `interface range ${range}`, `channel-group ${group} mode passive`),
+    pagp: one("SW2", `interface range ${range}`, `channel-group ${group} mode passive`),
+    missing: one("SW2", `interface ${last}`, `channel-group ${group} mode passive`),
+    allowed: one("SW2", `interface port-channel ${group}`, `switchport trunk allowed vlan ${vl}`),
+    shut: one("SW1", `interface ${ports[0]}`, "no shutdown"),
+  };
+  const symptom = {
+    passive: "every cable is up, yet spanning tree is blocking between the two switches again, as if there were no channel at all",
+    on: "nothing crosses between the two switches at all", pagp: "nothing crosses between the two switches at all",
+    missing: "the channel is running on fewer cables than were installed, and spanning tree is blocking again",
+    allowed: `the ${b.name} users on SW2 cannot reach their teammates on SW1, while ${a.name} works`,
+    shut: "the channel is running on fewer cables than were installed",
+  };
+  const both = f => C.all(f("SW1"), f("SW2"));
+  return {
+    subject: fault ? `${Site}: the new EtherChannel is not doing its job` : `${Site}: the extra uplink carries no traffic`,
+    brief: fault
+      ? [`The EtherChannel between SW1 and SW2 at the ${Site} site was configured yesterday, and it is not right: ${symptom[fault]}.`,
+        "There is exactly one fault, on one of the two switches. Start with `show etherchannel summary` on both: the flag beside each member port says whether it joined the bundle. The design below is what the channel should look like when you are done."]
+      : [`SW2 at the ${Site} site reaches SW1 over a ${speed} uplink that is full at peak hours. Facilities ran ${n === 2 ? "a second cable" : "two more cables"} last week, and it made no difference: spanning tree sees parallel links between the same two switches, which is a loop, and blocks ${n === 2 ? "one of them" : "all but one"}.`,
+        `Bundle the ${words} cables into **one EtherChannel** with LACP. Spanning tree then sees a single link, nothing is blocked, and the traffic is shared across all of them. Finish on the **port-channel** interface: it must be a trunk that carries only the two user VLANs.`],
+    details: [["Member ports", `${names}, the same on both switches`], ["Channel group", `${group} (interface Port-channel${group})`], ["Protocol", "LACP: SW1 active, SW2 passive"],
+      ["Port-channel", `trunk, allowed VLANs ${a.id} and ${b.id} only`], ["VLANs", `${a.id} ${a.name}: PC-A1 and PC-A2 · ${b.id} ${b.name}: PC-B1 and PC-B2`],
+      ["Useful", "show etherchannel summary · show spanning-tree · show interfaces trunk"]],
+    topology: {
+      devices: [
+        { name: "SW1", kind: "switch", hostname: `${site}-SW1`, x: 290, y: 170, config: [...base, ...sw1] },
+        { name: "SW2", kind: "switch", hostname: `${site}-SW2`, x: 710, y: 170, config: [...base, ...sw2] },
+        pc("PC-A1", 170, 410, `192.168.${a.id}.11`, M24), pc("PC-B1", 410, 410, `192.168.${b.id}.11`, M24),
+        pc("PC-A2", 590, 410, `192.168.${a.id}.12`, M24), pc("PC-B2", 830, 410, `192.168.${b.id}.12`, M24),
+      ],
+      links: [...ports.map(p => `SW1:${p} SW2:${p}`), "SW1:fa0/1 PC-A1", "SW1:fa0/2 PC-B1", "SW2:fa0/1 PC-A2", "SW2:fa0/2 PC-B2"],
+    },
+    objectives: [
+      { text: `${names} of SW1 are bundled in Port-channel ${group}`, check: C.bundled("SW1", group, n) },
+      { text: `${names} of SW2 are bundled in Port-channel ${group}`, check: C.bundled("SW2", group, n) },
+      { text: "LACP negotiates the channel: SW1 is active, SW2 is passive", check: C.all(C.channelMode("SW1", group, "active"), C.channelMode("SW2", group, "passive")) },
+      { text: `Port-channel ${group} is a trunk on both switches and allows only VLANs ${a.id} and ${b.id}`, check: both(d => C.poTrunk(d, group, ids)) },
+      !fault && { text: "Spanning tree sees one link between the switches and blocks nothing", check: C.all(both(d => C.bundled(d, group, n)), ...ids.map(v => C.noBlocked(["SW1", "SW2"], v))) },
+      { text: "PC-A1 pings PC-A2, and PC-B1 pings PC-B2", check: C.all(C.ping("PC-A1", `192.168.${a.id}.12`), C.ping("PC-B1", `192.168.${b.id}.12`)) },
+      fault ? { text: "Save every switch you changed", check: C.savedIfChanged(["SW1", "SW2"]) } : { text: "Save both switches", check: both(d => C.savedChanged(d)) },
+    ].filter(Boolean),
+    hints: fault
+      ? [`\`show etherchannel summary\` on each switch: \`(P)\` is bundled, \`(I)\` is a port running on its own because the other end did not negotiate, \`(s)\` is suspended and \`(D)\` is down. Count the member ports as well: are all ${words} listed?`,
+        "`show running-config` shows the `channel-group` line of every member. LACP forms with active/active or active/passive. `on` speaks no protocol and `desirable`/`auto` are PAgP, so neither works against an LACP end. To change the mode of a whole group, select all its members with `interface range`.",
+        "If the bundle is complete and one VLAN still fails, compare `show interfaces trunk` on both switches. The allowed list is set on the `port-channel` interface and must match at both ends."]
+      : [`\`show spanning-tree vlan ${a.id}\` on each switch shows why the extra cabling is idle: on one of them a parallel port has the role Altn and the state BLK. An EtherChannel turns the cables into one logical port.`,
+        `\`interface range ${range}\`, then \`channel-group ${group} mode active\` on SW1 and \`mode passive\` on SW2. LACP needs at least one active end. The switch creates \`interface Port-channel${group}\` by itself.`,
+        `\`interface port-channel ${group}\`, \`switchport mode trunk\`, \`switchport trunk allowed vlan ${vl}\`: what you set there is copied to the member ports. In \`show etherchannel summary\`, look for \`Po${group}(SU)\` and a \`(P)\` beside each member.`],
+    solution: fault ? fix[fault] : [{ on: "SW1", cmds: build("active") }, { on: "SW2", cmds: build("passive") }],
+  };
+}
+
 // ---------------------------------------------------------------- generators
+const pickVlans = x => { const ids = x.sample(VLAN_IDS, 2).sort((m, n) => m - n), names = x.sample(VLAN_NAMES, 2); return ids.map((id, i) => ({ id, name: names[i] })); };
+const CHANNEL_PORTS = [["g0/1", "g0/2"], ["fa0/7", "fa0/8"], ["fa0/5", "fa0/6"], ["fa0/6", "fa0/7", "fa0/8"], ["fa0/3", "fa0/4", "fa0/5"]];
 const SKILLS = [
   // ---------- console and device basics
   {
@@ -859,6 +1067,37 @@ const SKILLS = [
     },
   },
 
+  // ---------- spanning tree
+  {
+    id: "stp-root", topic: "switching", name: "Put the root bridge where it belongs", par: 720,
+    gen(x) {
+      const vlans = pickVlans(x), shape = x.pick(["DSW1", "DSW2", "split"]);
+      const roots = { [vlans[0].id]: shape === "split" ? "DSW1" : shape, [vlans[1].id]: shape === "split" ? "DSW2" : shape };
+      const primary = x.pick([4096, 8192, 16384]);
+      return stpLab({ site: x.pick(SITES), vlans, roots, left: x.pick([0, 4096, 8192, 12288]), exact: x.bool(0.4) ? { primary, secondary: primary + x.pick([4096, 8192]) } : null, guard: x.bool() });
+    },
+  },
+  {
+    id: "stp-guards", topic: "switching", name: "Find the misplaced spanning tree protection", par: 600,
+    gen(x) {
+      return stpGuardLab({ site: x.pick(SITES), vlans: pickVlans(x), root: x.pick(["DSW1", "DSW2"]), fault: x.pick(["guard-uplink", "bpdu-uplink", "guard-core"]) });
+    },
+  },
+
+  // ---------- EtherChannel
+  {
+    id: "channel-build", topic: "switching", name: "Bundle parallel links into an EtherChannel", par: 600,
+    gen(x) {
+      return channelLab({ site: x.pick(SITES), vlans: pickVlans(x), ports: x.pick(CHANNEL_PORTS), group: x.int(1, 6), fault: null });
+    },
+  },
+  {
+    id: "channel-fault", topic: "switching", name: "Find why an EtherChannel does not form", par: 540,
+    gen(x) {
+      return channelLab({ site: x.pick(SITES), vlans: pickVlans(x), ports: x.pick(CHANNEL_PORTS), group: x.int(1, 6), fault: x.pick(["passive", "on", "pagp", "missing", "allowed", "shut"]) });
+    },
+  },
+
   // ---------- Ansible (v2.0 blueprint)
   {
     id: "ansible-vlan", topic: "netops", name: "Roll out a VLAN with Ansible", par: 780,
@@ -872,6 +1111,7 @@ const SKILLS = [
 // Which story lab each template is a variant of. A lab can have more than one
 // (for example a build version and a troubleshooting version).
 const AFTER = {
+  "stp-root": "root-bridge", "stp-guards": "root-bridge", "channel-build": "port-channel", "channel-fault": "port-channel",
   "ansible-vlan": "ansible-rollout", "static-floating": "floating-backup", "relay-build": "dhcp-relay", "relay-fault": "dhcp-relay",
   "cli-name": "first-console", "cli-setup": "lock-it-down", "addr-lan": "desk-move", "addr-fault": "desk-move", "addr-svi": "switch-mgmt",
   "vlan-access": "vlans-101", "vlan-trunk": "trunk-line", "vlan-fault": "trunk-line", roas: "router-on-a-stick", "port-sec": "port-security",

@@ -4,6 +4,21 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- The simulator now runs spanning tree. Each VLAN gets its own tree with a root bridge, root, designated and alternate ports and path costs, and `show spanning-tree`, `show spanning-tree vlan`, `show spanning-tree summary` and `show spanning-tree inconsistentports` show it. New commands: `spanning-tree mode`, `spanning-tree vlan <list> priority`, `root primary`, `root secondary`, `spanning-tree guard root` and `spanning-tree cost`.
+- The simulator now bundles EtherChannels. `channel-group <n> mode active|passive|on|desirable|auto` negotiates like the real protocols (two passive ends stay apart, `on` against LACP is suspended), the switch creates the port-channel interface, settings typed there are copied to the members, and `show etherchannel summary` shows the flags.
+- BPDU guard now works: a guarded port with a switch on the other end goes err-disabled, with the log messages, and stays down until you bounce it. Root guard holds a port that hears a better root.
+- New lab "Root of the Problem" (tier 2): an access switch has become the spanning tree root. Move the root to the distribution switch with a backup, switch to Rapid PVST+, and add root guard.
+- New lab "Two Cables, One Link" (tier 2): a second uplink that spanning tree blocks. Bundle both into an LACP EtherChannel and set the trunk on the port-channel interface.
+- Four variant templates for them: root placement with one root or one per VLAN and with exact priorities; misplaced protection to find (root guard or BPDU guard on the wrong port, three faults); building a channel of two or three links; and a channel that does not form (six faults).
+- The network map shows a port blocked by spanning tree in amber, with the VLANs in its tooltip, and draws bundled links thicker.
+- Theory for the topic now covers reading `show spanning-tree`, what `root primary` really sets, where each protection belongs, and the EtherChannel member flags. Eight new questions and two handbook sections go with it.
+
+### Changed
+
+- `show interfaces status` reports `err-disabled` and `suspended` ports.
+
 ## [0.7.0] - 2026-11-21
 
 ### Added
