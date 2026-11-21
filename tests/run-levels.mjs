@@ -22,7 +22,7 @@ for (const level of LEVELS) {
   if (before.every(o => o.done)) problems.push("all objectives are already complete before the player does anything");
   const transcript = [];
   for (const step of level.solution) {
-    if (step.pc) { lab.setHostIp(step.pc, step.ip); continue; }
+    if (step.pc) { lab.runStep(step); continue; }
     for (const c of step.cmds) {
       const s = lab.session(step.on);
       const prompt = s.prompt;
@@ -59,7 +59,7 @@ if (!only || only === "practice") {
       subjects.add(JSON.stringify(level.details));
       if (lab.progress().every(o => o.done)) problems.push(`seed ${seed}: nothing to do at the start`);
       for (const step of level.solution) {
-        if (step.pc) { lab.setHostIp(step.pc, step.ip); continue; }
+        if (step.pc) { lab.runStep(step); continue; }
         for (const c of step.cmds) {
           const out = lab.exec(step.on, c);
           if (/% (Invalid|Incomplete|Ambiguous|Unknown)/.test(out)) problems.push(`seed ${seed}: "${c}" rejected on ${step.on}`);
@@ -156,14 +156,26 @@ if (!only) {
     if (!Number.isInteger(q.a) || q.a < 0 || q.a >= q.o.length) problems.push(`${q.id}: answer index out of range`);
     if (new Set(q.o).size !== q.o.length) problems.push(`${q.id}: duplicate options`);
   }
-  for (const level of LEVELS.filter(l => l.type === "quiz")) {
-    const { domains, count } = level.params;
-    const per = Math.ceil(count / domains.length);
-    for (const d of domains) {
-      const have = QUESTIONS.filter(q => q.ch === d).length;
-      if (have < per) problems.push(`${level.id}: needs ${per} questions from domain ${d}, the bank has ${have}`);
+  // each promotion exam must be fillable from the built-in bank, in both exam versions
+  const { topicOfQuestion, TOPIC_BY_ID, inExam, EXAMS, topicsByDomain } = await import("../js/game/topics.js");
+  const tagged = QUESTIONS.map(q => ({ ...q, topic: topicOfQuestion(q) }));
+  for (const exam of Object.keys(EXAMS)) {
+    const pool = tagged.filter(q => inExam(q, q.topic, exam));
+    for (const level of LEVELS.filter(l => l.type === "quiz")) {
+      const want = exam === "v2" ? level.params.v2domains : level.params.domains;
+      if (!Array.isArray(want)) { problems.push(`${level.id}: no domain list for ${exam}`); continue; }
+      const per = Math.ceil(level.params.count / want.length);
+      for (const d of want) {
+        const have = pool.filter(q => (exam === "v2" ? TOPIC_BY_ID.get(q.topic).v2 : q.ch) === d).length;
+        if (have < per) problems.push(`${level.id} (${exam}): needs ${per} questions from domain ${d}, the bank has ${have}`);
+      }
+    }
+    for (const d of EXAMS[exam].domains) if (d.n && !topicsByDomain(exam).some(x => x.n === d.n)) problems.push(`${exam}: domain ${d.n} has no topics`);
+    for (const dom of topicsByDomain(exam)) for (const t of dom.topics) {
+      if (t.id !== "capstone" && pool.filter(q => q.topic === t.id).length < 4) problems.push(`${exam}: topic ${t.id} has fewer than 4 custom questions`);
     }
   }
+  for (const l of LEVELS) if (l.only && !EXAMS[l.only]) problems.push(`level ${l.id}: unknown exam "${l.only}"`);
   if (!HANDBOOK_MD.includes("## ")) problems.push("handbook has no sections");
   if (problems.length) {
     failed++;

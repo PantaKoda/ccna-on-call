@@ -37,6 +37,16 @@ Several changes asked for in one request go out as one release. Never edit `js/v
 - The owner studies theory first and repeats on demand. When adding a lab, add its theory, at least four custom questions on the topic and at least one variant template.
 - Repetition is pull-based. The owner tried a spaced-review queue with a "Review due" banner in 0.3 and had it removed in 0.4: do not add schedules, due dates, reminders or home-screen banners unless asked.
 
+## Two exam versions (v1.1 and v2.0)
+
+The game can be studied for either blueprint; the player picks on the first screen. Rules the owner set:
+
+- **Only add, never remove.** Content that v2.0 dropped stays, tagged for v1.1.
+- **Mark exclusives.** In v1.1, anything not in v2.0 must show "v1 exclusive"; new v2.0 material shows "New in v2" and is hidden in v1.1. The tags are listed in README.md ("The two exam versions"): topic `v1`/`v2` domains, `{v1}`/`{v2}` on theory headings, a seventh item on questions, `only` on labs.
+- When adding anything, decide which exam(s) it belongs to by checking the blueprint item, and tag it. Untagged means both.
+- The **AI topics of v2.0 are deliberately skipped for now** (agentic AI, prompts). Do not add them unless asked.
+- **Automation stays lightweight.** v2.0 reduces automation to Ansible; the owner wants it embedded in labs as far as a browser simulation can go, without turning the project into an emulator with containers or virtual machines. `js/engine/ansible.js` is a simulation, not real Ansible.
+
 ## Conventions
 
 - `js/engine/` has no DOM access so it runs under Node for the tests. Keep it that way.

@@ -46,6 +46,7 @@ export function mountLab(root, level, { onDone, actions = [], note = null, badge
   // ---- console window
   const tabs = h("div", { class: "tabs", role: "tablist" });
   const ipBar = h("form", { class: "ipbar", hidden: true });
+  const fileBar = h("div", { class: "filebar", hidden: true });
   const termHost = h("div", { class: "term-host" },
     h("div", { class: "term-empty" }, h("p", {}, "No console open."), h("p", { class: "muted" }, "Click a device on the network map to connect to it.")));
 
@@ -61,7 +62,7 @@ export function mountLab(root, level, { onDone, actions = [], note = null, badge
         h("div", { class: "win-body map-body" }, topo.el)),
       h("section", { class: "window win-console", "aria-label": "Console" },
         winTitle("Console", null, statTime, statCmds, h("button", { class: "btn ghost small", onclick: resetLab }, "Reset lab")),
-        tabs, ipBar, termHost)));
+        tabs, ipBar, fileBar, termHost)));
 
   function winTitle(name, sub, ...extra) {
     return h("header", { class: "win-title" }, h("span", { class: "win-dots", "aria-hidden": "true" }, h("i"), h("i"), h("i")),
@@ -79,7 +80,7 @@ export function mountLab(root, level, { onDone, actions = [], note = null, badge
   // ---- consoles
   function openConsole(dn) {
     const d = lab.net.devs[dn];
-    if (d.locked) { toast(`${d.hostname} is not ours to manage. ${d.note || ""}`.trim(), "warn"); return; }
+    if (d.locked) { toast(d.lockMsg ? `${d.hostname}: no console here. ${d.lockMsg}` : `${d.hostname} is not ours to manage. ${d.note || ""}`.trim(), "warn"); return; }
     if (!terms.has(dn)) {
       lab.net.takeLogs(dn); // drop log lines that piled up before anyone was watching
       const session = lab.session(dn);
@@ -116,6 +117,32 @@ export function mountLab(root, level, { onDone, actions = [], note = null, badge
   }
 
   // ---- PC IP settings bar
+  // ---- files on a PC (inventory, playbooks): listed above the prompt, edited in a dialog
+  function renderFileBar() {
+    const d = active && lab.net.devs[active];
+    if (!d || !d.files) { fileBar.hidden = true; return; }
+    fileBar.hidden = false;
+    fileBar.replaceChildren(h("strong", {}, "Files"), ...Object.keys(d.files).map(name => h("button", { class: "btn small", onclick: () => editFile(active, name), title: `Edit ${name}` }, name)),
+      h("span", { class: "muted small" }, "Click a file to edit it. In the prompt: dir, type <file>, ansible-playbook <file>."));
+  }
+  function editFile(dn, name) {
+    const area = h("textarea", { class: "editor", spellcheck: "false", autocomplete: "off", autocapitalize: "off", "aria-label": `Contents of ${name}` });
+    area.value = lab.net.devs[dn].files[name];
+    const close = () => { box.remove(); const t = terms.get(dn); if (t) t.focus(); };
+    const saveIt = () => { lab.setFile(dn, name, area.value); lab.commands++; close(); toast(`${name} saved`, "ok"); afterCommand(); };
+    area.addEventListener("keydown", e => {
+      if (e.key === "Tab" && !e.shiftKey) { e.preventDefault(); area.setRangeText("  ", area.selectionStart, area.selectionEnd, "end"); }   // YAML wants spaces
+      else if (e.key === "Escape") close();
+      else if (e.key === "s" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveIt(); }
+    });
+    const box = h("div", { class: "overlay", role: "dialog", "aria-modal": "true", "aria-label": `Edit ${name}` },
+      h("div", { class: "modal wide" }, h("p", { class: "eyebrow" }, `${dn} \u00b7 file`), h("h2", {}, name),
+        h("p", { class: "muted small" }, name.endsWith(".ini") ? "One host per line under its [group]: NAME ansible_host=ADDRESS" : "Indentation is the structure in YAML. Use spaces (Tab inserts two) and line new entries up with their neighbours."),
+        area, h("div", { class: "actions" }, h("button", { class: "btn primary", onclick: saveIt }, "Save"), h("button", { class: "btn", onclick: close }, "Cancel"), h("span", { class: "muted small" }, "Ctrl+S saves, Esc cancels"))));
+    document.body.append(box);
+    area.focus();
+  }
+
   function renderIpBar() {
     const d = active && lab.net.devs[active];
     if (!d || !isHost(d)) { ipBar.hidden = true; return; }
@@ -175,6 +202,7 @@ export function mountLab(root, level, { onDone, actions = [], note = null, badge
     for (const [dn, t] of terms) { t.el.hidden = dn !== active; t.sync(); }
     termHost.querySelector(".term-empty").hidden = terms.size > 0;
     renderIpBar();
+    renderFileBar();
     renderHints();
     tick();
   }
@@ -192,7 +220,9 @@ export function mountLab(root, level, { onDone, actions = [], note = null, badge
     } else {
       solutionShown = true;
       hintBox.append(h("div", { class: "bubble solution" }, h("span", { class: "who" }, "Solution"),
-        level.solution.map(step => step.pc
+        level.solution.map(step => step.file
+          ? h("div", {}, h("strong", {}, `${step.pc}: ${step.file} should read`), h("pre", {}, step.content))
+          : step.pc
           ? h("div", {}, h("strong", {}, step.pc), h("pre", {}, step.ip.mode === "dhcp" ? "IP settings: DHCP" : `IP settings: ${step.ip.ip}  ${step.ip.mask}  gateway ${step.ip.gw || "-"}`))
           : h("div", {}, h("strong", {}, lab.net.devs[step.on].hostname), h("pre", {}, step.cmds.filter(Boolean).join("\n"))))));
     }

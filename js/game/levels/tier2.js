@@ -161,7 +161,8 @@ export default [
     from: "Dana Okafor, NOC Team Lead",
     subject: "Promotion check: network access",
     brief: ["You've been handling the access layer on your own. Pass this check on switching, VLANs and wireless and you join the routing rotation."],
-    params: { domains: [2], count: 10, pass: 70 },
+    params: { domains: [2], v2domains: [2], count: 10, pass: 70 },
+    v2: { subject: "Promotion check: switching and network access", brief: ["You've been handling the access layer on your own. Pass this check on switching and network access and you join the routing rotation."] },
     skills: ["Network access"],
   },
 ];

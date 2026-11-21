@@ -44,6 +44,64 @@ const cfg = (...cmds) => ["enable", "configure terminal", ...cmds, "end"];
 const cap = s => s[0].toUpperCase() + s.slice(1);
 const ISP = (x, y, cmds) => ({ name: "ISP", kind: "router", hostname: "ISP", x, y, locked: true, note: "Internet (8.8.8.8)", config: [...cmds, "interface loopback0", "ip address 8.8.8.8 255.255.255.255"] });
 
+// ---------------------------------------------------------------- the Ansible lab
+// Shared by the story lab (fixed values) and its variants (random values).
+// `faults` chooses what is wrong with the files on the control node:
+//   host  - the third switch is missing from the inventory
+//   line  - the playbook never puts the port in the VLAN
+//   group - the play targets a group that is not in the inventory
+//   port  - the playbook configures the wrong interface
+export function ansibleRollout({ vid, vname, port, site, faults }) {
+  const mg = "10.0.99", cams = `192.168.${vid}`, yml = `${vname.toLowerCase()}.yml`;
+  const has = f => faults.includes(f);
+  const wrongPort = port === 8 ? 7 : port + 1;
+  const inventory = n => ["# Access switches, managed over SSH", "[access]", ...Array.from({ length: n }, (_, i) => `SW${i + 1} ansible_host=${mg}.1${i + 1}`), ""].join("\n");
+  const playbook = (group, portNo, vlanLine) => [
+    `- name: Roll out the ${vname} VLAN`, `  hosts: ${group}`, "  tasks:",
+    `    - name: Create VLAN ${vid}`, "      ios_config:", `        parents: vlan ${vid}`, "        lines:", `          - name ${vname}`,
+    "    - name: Camera port", "      ios_config:", `        parents: interface FastEthernet0/${portNo}`, "        lines:", "          - switchport mode access",
+    ...(vlanLine ? [`          - switchport access vlan ${vid}`] : []), ""].join("\n");
+  const sw = (n, x, y, uplinks) => ({
+    name: `SW${n}`, kind: "switch", hostname: `${site}-SW${n}`, x, y, locked: true,
+    lockMsg: "It is at another site with no console cable attached. Manage it from ADMIN-PC with Ansible.",
+    config: ["interface vlan 1", `ip address ${mg}.1${n} ${M24}`, "no shutdown", "exit", "ip domain-name kestrel.lan", "username ansible privilege 15 secret Aut0mate-9",
+      "crypto key generate rsa modulus 2048", "ip ssh version 2", "line vty 0 4", "transport input ssh", "login local", "exit", ...uplinks.flatMap(p => [`interface ${p}`, "switchport mode trunk"])],
+  });
+  const all = ["SW1", "SW2", "SW3"], ports = [`fa0/${port}`];
+  return {
+    subject: `Roll out VLAN ${vid} (${vname}) to three sites with Ansible`,
+    brief: [`A camera is being installed at each of three sites, and every access switch needs **VLAN ${vid}** named **${vname}**, with port **Fa0/${port}** as an access port in it. The switches are at other sites: there is no console to plug into.`,
+      "The last change like this was typed by hand on each switch and came out different on every one, so this one goes through **Ansible**. A colleague started an inventory and a playbook on ADMIN-PC and then went on leave. They are not finished, and nobody has run them.",
+      "Click **ADMIN-PC**. Use `dir` and `type` to read the files, the **Files** bar above the prompt to edit them, and `ansible-playbook` to run the change. Check the result on the switches through Ansible too."],
+    details: [["Control node", `ADMIN-PC (${mg}.10)`], ["Switches", `SW1 ${mg}.11, SW2 ${mg}.12, SW3 ${mg}.13 (SSH user already set up)`], ["Required on each", `VLAN ${vid} named ${vname}; Fa0/${port} an access port in it`],
+      ["Files", `inventory.ini and ${yml}`], ["Useful", `ansible all -m ping · ansible-playbook ${yml} --check · ansible all -m ios_command -a "show vlan brief"`]],
+    topology: {
+      devices: [
+        { name: "ADMIN-PC", kind: "pc", x: 160, y: 120, ip: { mode: "static", ip: `${mg}.10`, mask: M24 },
+          files: { "inventory.ini": inventory(has("host") ? 2 : 3), [yml]: playbook(has("group") ? "switches" : "access", has("port") ? wrongPort : port, !has("line")) } },
+        sw(1, 500, 120, ["g0/1", "g0/2"]), sw(2, 300, 300, ["g0/1"]), sw(3, 700, 300, ["g0/1"]),
+        pc("CAM1", 760, 120, `${cams}.11`, M24), pc("CAM2", 300, 460, `${cams}.12`, M24), pc("CAM3", 700, 460, `${cams}.13`, M24),
+      ],
+      links: ["ADMIN-PC SW1:fa0/1", "SW1:g0/1 SW2:g0/1", "SW1:g0/2 SW3:g0/1", `SW1:fa0/${port} CAM1`, `SW2:fa0/${port} CAM2`, `SW3:fa0/${port} CAM3`],
+    },
+    objectives: [
+      { text: "The inventory lists all three switches with their addresses", check: C.inventoryHas("ADMIN-PC", [`${mg}.11`, `${mg}.12`, `${mg}.13`]) },
+      { text: `VLAN ${vid} exists and is named \`${vname}\` on all three switches`, check: C.all(...all.map(s => C.vlan(s, vid, vname))) },
+      { text: `Fa0/${port} is an access port in VLAN ${vid} on all three switches`, check: C.all(...all.map(s => C.accessVlan(s, ports, vid))) },
+      { text: "The cameras can reach each other (CAM1 pings CAM2 and CAM3)", check: C.all(C.ping("CAM1", `${cams}.12`), C.ping("CAM1", `${cams}.13`)) },
+      { text: "The last playbook run reached all three switches with nothing failed or unreachable", check: C.ansibleClean(all) },
+    ],
+    hints: ["Start with `ansible all -m ping`. It shows which switches Ansible can log in to. A switch that is missing from the inventory is never touched, and nothing warns you about it.",
+      "Read the playbook top down. `hosts:` must name a group that exists in the inventory, `parents:` is the mode to enter (check the interface number), and `lines:` must hold every command the port needs: its mode *and* its VLAN. New lines must be indented exactly like their neighbours.",
+      `Run \`ansible-playbook ${yml} --check\` to see what would change, then without \`--check\`. Verify with \`ansible all -m ios_command -a "show vlan brief"\`. A second run should report ok for every task.`],
+    solution: [
+      { pc: "ADMIN-PC", file: "inventory.ini", content: inventory(3) },
+      { pc: "ADMIN-PC", file: yml, content: playbook("access", port, true) },
+      { on: "ADMIN-PC", cmds: ["ansible all -m ping", `ansible-playbook ${yml}`, `ansible-playbook ${yml}`] },
+    ],
+  };
+}
+
 // ---------------------------------------------------------------- generators
 const SKILLS = [
   // ---------- console and device basics
@@ -667,11 +725,21 @@ const SKILLS = [
     },
   },
 
+
+  // ---------- Ansible (v2.0 blueprint)
+  {
+    id: "ansible-vlan", topic: "netops", name: "Roll out a VLAN with Ansible", par: 780,
+    gen(x) {
+      const vid = x.pick([30, 40, 50, 60, 70, 80, 90]), vname = x.pick(["CCTV", "VOICE", "PRINT", "GUEST", "LAB", "STORES", "DOORS"]);
+      return ansibleRollout({ vid, vname, port: x.int(3, 8), site: x.pick(SITES), faults: x.sample(["host", "line", "group", "port"], 2) });
+    },
+  },
 ];
 
 // Which story lab each template is a variant of. A lab can have more than one
 // (for example a build version and a troubleshooting version).
 const AFTER = {
+  "ansible-vlan": "ansible-rollout",
   "cli-name": "first-console", "cli-setup": "lock-it-down", "addr-lan": "desk-move", "addr-fault": "desk-move", "addr-svi": "switch-mgmt",
   "vlan-access": "vlans-101", "vlan-trunk": "trunk-line", "vlan-fault": "trunk-line", roas: "router-on-a-stick", "port-sec": "port-security",
   "static-chain": "static-routes", "static-default": "default-route", "ospf-build": "ospf-single-area", "ospf-fault": "ospf-broken",

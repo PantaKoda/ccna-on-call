@@ -80,6 +80,20 @@ export class Lab {
     this.net.collectEvents();
   }
 
+  // replace the content of a text file on a PC (the Files bar does this)
+  setFile(devName, name, content) {
+    const d = this.net.devs[devName];
+    d.files ||= {};
+    d.files[name] = String(content).replace(/\r\n/g, "\n");
+  }
+
+  // one step of a scripted solution: commands, PC IP settings or a file edit
+  runStep(step) {
+    if (step.file) this.setFile(step.pc, step.file, step.content);
+    else if (step.pc) this.setHostIp(step.pc, step.ip);
+    else for (const c of step.cmds) this.exec(step.on, c);
+  }
+
   // -> [{text, done}]
   progress() {
     return this.level.objectives.map(o => {
@@ -92,10 +106,7 @@ export class Lab {
 
   // Play a scripted solution (used by the tests and the "show solution" panel).
   runSolution(steps = this.level.solution) {
-    for (const step of steps) {
-      if (step.pc) this.setHostIp(step.pc, step.ip);
-      else for (const c of step.cmds) this.exec(step.on, c);
-    }
+    for (const step of steps) this.runStep(step);
   }
 }
 

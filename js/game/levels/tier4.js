@@ -1,4 +1,5 @@
 import { C } from "../checks.js";
+import { ansibleRollout } from "../practice.js";
 
 const M24 = "255.255.255.0";
 const M30 = "255.255.255.252";
@@ -162,12 +163,22 @@ export default [
   },
 
   {
+    id: "ansible-rollout", tier: 4, type: "lab", only: "v2", xp: 300, par: 900,
+    title: "Push It Everywhere",
+    from: "Dana Okafor, NOC Team Lead",
+    skills: ["inventory", "playbook", "ios_config", "ansible-playbook --check", "idempotence"],
+    ...ansibleRollout({ vid: 40, vname: "CCTV", port: 5, site: "DEPOT", faults: ["host", "line"] }),
+    debrief: "The second run reporting `ok` everywhere is the point of the tool: the playbook describes the end state, so running it again is safe, and all three switches are provably configured the same. The switch you forgot to list is the one that stays broken, which is why the inventory matters as much as the playbook.",
+  },
+
+  {
     id: "exam-4", tier: 4, type: "quiz", xp: 260, par: 840,
     title: "Senior Engineer Board",
     from: "Dana Okafor, NOC Team Lead",
     subject: "Promotion check: IP services and security",
     brief: ["Services and security are yours now. Pass this board and you carry the incident pager as lead engineer."],
-    params: { domains: [4, 5], count: 12, pass: 70 },
+    params: { domains: [4, 5], v2domains: [4], count: 12, pass: 70 },
+    v2: { subject: "Promotion check: network services and security" },
     skills: ["IP services", "Security fundamentals"],
   },
 ];

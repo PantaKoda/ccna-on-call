@@ -1,17 +1,21 @@
-// App shell: home (career path or topics), study pages, routing, results.
+// App shell: exam chooser, home (career path or topics), study pages, routing, results.
 
 import { h, rich, fmtTime, stars } from "./dom.js";
 import { store } from "./store.js";
 import { LEVELS, LEVEL_BY_ID, TIERS } from "../game/levels/index.js";
-import { TRACKS, TOPIC_BY_ID, TOPIC_ORDER, LEVEL_TOPIC } from "../game/topics.js";
+import { EXAMS, TOPIC_BY_ID, LEVEL_TOPIC, topicsByDomain, topicOnly } from "../game/topics.js";
 import { variantsOf, makeVariant } from "../game/practice.js";
 import { mountLab } from "./labview.js";
 import { mountSubnet, mountQuiz, loadBank, countByTopic, SOURCES } from "./drills.js";
-import { toggleHandbook, closeHandbook, loadTheory, renderMarkdown } from "./handbook.js";
+import { toggleHandbook, closeHandbook, loadTheory, renderMarkdown, theoryPage } from "./handbook.js";
 import { VERSION } from "../version.js";
 
 const app = document.getElementById("app");
 const TYPE = { lab: "Lab", subnet: "Drill", quiz: "Exam" };
+const BADGE = {
+  v1: () => h("span", { class: "vbadge v1x", title: "In the v1.1 blueprint, not in v2.0" }, "v1 exclusive"),
+  v2: () => h("span", { class: "vbadge v2n", title: "New in the v2.0 blueprint" }, "New in v2"),
+};
 let view = null;      // the mounted activity, if any
 let bank = null;      // question bank, once loaded (for counts on the Topics screen)
 let onHome = false;
@@ -24,16 +28,17 @@ loadBank().then(b => { bank = b; if (onHome) renderHome(); });
 
 // `where` is null on the home screen, or { tag, title } inside an activity
 function renderTopbar(where) {
-  const t = store.totals(), r = store.rank();
+  const t = store.totals(), r = store.rank(), chosen = store.examChosen();
   topbar.replaceChildren(...[
     h("a", { class: "brand", href: "#/", "aria-label": "CCNA: On Call, back to the home screen" },
       h("span", { class: "brand-mark", "aria-hidden": "true" }, h("i"), h("i"), h("i")), h("span", {}, "CCNA: ", h("b", {}, "On Call"))),
-    where ? h("a", { class: "btn ghost small", href: "#/" }, "← Home") : null,
-    where ? h("span", { class: "top-title" }, h("span", { class: "tag" + (where.solved ? " done" : "") }, where.tag), where.title) : h("span", { class: "top-title muted" }, "Kestrel Freight · Network Operations"),
+    where && where.back !== false ? h("a", { class: "btn ghost small", href: "#/" }, "← Home") : null,
+    where ? h("span", { class: "top-title" }, where.tag ? h("span", { class: "tag" + (where.solved ? " done" : "") }, where.tag) : null, where.title) : h("span", { class: "top-title muted" }, "Kestrel Freight · Network Operations"),
     h("span", { class: "spacer" }),
-    h("span", { class: "top-rank", title: "Your rank" }, r.rank),
-    h("span", { class: "top-xp" }, `${t.xp} XP`),
-    h("button", { class: "btn small", onclick: toggleHandbook, title: "Command reference and theory pages" }, "Handbook"),
+    chosen ? h("a", { class: "btn small exam-chip", href: "#/exam", title: `Studying for ${EXAMS[store.exam()].name}. Click to change.` }, "Exam ", h("b", {}, EXAMS[store.exam()].short)) : null,
+    chosen ? h("span", { class: "top-rank", title: "Your rank" }, r.rank) : null,
+    chosen ? h("span", { class: "top-xp" }, `${t.xp} XP`) : null,
+    chosen ? h("button", { class: "btn small", onclick: toggleHandbook, title: "Command reference and theory pages" }, "Handbook") : null,
     themeButton(where),
   ].filter(Boolean));
 }
@@ -50,6 +55,31 @@ function themeButton(where) {
 // Go to a route, also when it is the one already showing (a new variant).
 function nav(hash) {
   if (location.hash === hash) route(); else location.hash = hash;
+}
+
+// ------------------------------------------------------------ exam chooser
+function renderChooser() {
+  const first = !store.examChosen();
+  renderTopbar({ tag: null, title: "Choose your exam", back: !first });
+  main.className = "chooser";
+  const NOTES = {
+    v1: ["Everything in the game except the Ansible lab and the sections marked “New in v2”.", "Topics and sections that v2.0 dropped are marked “v1 exclusive”, so you can see what only this exam asks for.", "Matches a v1.1 question bank, if you imported one."],
+    v2: ["Adds an Ansible lab, and theory sections on OSPFv3, storm control, RA guard and secure file transfer.", "Hides what v2.0 dropped: REST and SDN theory, NTP, QoS and the security-programme sections.", "The AI topics of v2.0 are not in the game yet."],
+  };
+  const card = id => {
+    const e = EXAMS[id], cur = !first && store.exam() === id;
+    return h("section", { class: "exam-card" + (cur ? " current" : "") },
+      h("p", { class: "eyebrow" }, cur ? "Currently selected" : id === "v2" ? "New blueprint" : "Current blueprint"),
+      h("h2", {}, e.name), h("p", { class: "muted" }, e.blurb),
+      h("table", { class: "details" }, h("tbody", {}, e.domains.filter(d => d.n).map(d => h("tr", {}, h("th", { scope: "row" }, `${d.n}. ${d.name}`), h("td", {}, `${d.weight}%`))))),
+      h("ul", { class: "exam-notes" }, NOTES[id].map(n => h("li", {}, n))),
+      h("button", { class: "btn primary block", onclick: () => { store.setExam(id); nav("#/"); } }, cur ? `Keep studying for ${e.short}` : `Study for ${e.short}`));
+  };
+  main.replaceChildren(h("div", { class: "chooser-wrap" },
+    h("h1", {}, "Which exam are you studying for?"),
+    h("p", { class: "muted lead" }, "The labs, theory and questions are arranged by the blueprint you pick. Your progress is shared, and you can switch at any time from the Exam button in the top bar."),
+    h("div", { class: "exam-cards" }, card("v1"), card("v2"))));
+  view = { dirty: () => false, destroy() {} };
 }
 
 // ------------------------------------------------------------ home
@@ -70,7 +100,7 @@ function hero() {
   const pct = Math.round((t.ticketXp / t.maxXp) * 100);
   return h("section", { class: "hero" },
     h("div", { class: "hero-main" },
-      h("p", { class: "eyebrow" }, "Your rank"),
+      h("p", { class: "eyebrow" }, `Your rank · ${EXAMS[store.exam()].name}`),
       h("h1", {}, r.rank),
       h("p", { class: "muted" }, next
         ? "You're the on-call engineer. Study a topic, then work its tickets on a simulated network. Once you have solved a lab, open it again for a random variant whenever you want more practice."
@@ -96,9 +126,9 @@ function switcher(mode) {
 
 // ---- career path: tiers of tickets, each harder than the last
 function careerView() {
-  const r = store.rank(), next = store.nextLevel();
+  const r = store.rank(), next = store.nextLevel(), list = store.levels();
   return TIERS.map(tier => {
-    const levels = LEVELS.filter(l => l.tier === tier.id);
+    const levels = list.filter(l => l.tier === tier.id);
     const done = levels.filter(l => store.isDone(l.id)).length;
     return h("section", { class: "tier" + (r.tier === tier.id ? " current" : "") },
       h("header", { class: "tier-head" },
@@ -114,10 +144,10 @@ function levelCard(l, next, showTopic = true) {
   const topic = TOPIC_BY_ID.get(LEVEL_TOPIC[l.id]);
   const hasVariants = l.type === "lab" && variantsOf(l.id).length > 0, vs = store.variantStats(l.id);
   const inner = [
-    h("div", { class: "card-top" }, h("span", { class: "tag " + l.type }, TYPE[l.type]), h("span", { class: "spacer" }),
+    h("div", { class: "card-top" }, h("span", { class: "tag " + l.type }, TYPE[l.type]), l.only ? BADGE[l.only]() : null, h("span", { class: "spacer" }),
       res ? stars(res.stars) : open ? h("span", { class: "muted small" }, `${l.xp} XP`) : h("span", { class: "lock", "aria-hidden": "true" }, "🔒")),
     h("h3", {}, l.title),
-    h("p", { class: "muted small" }, l.subject),
+    h("p", { class: "muted small" }, (store.exam() === "v2" && l.v2 && l.v2.subject) || l.subject),
     res ? h("p", { class: "card-foot small" }, h("span", { class: "solved-mark" }, "✓ Solved"), ` · ${res.xp} / ${l.xp} XP · best ${fmtTime(res.best)}`,
       hasVariants ? h("span", { class: vs.n ? "variant-line on" : "variant-line" }, vs.n ? `✓ ${vs.n} variant${vs.n > 1 ? "s" : ""} solved · +${vs.xp} XP` : "Variants open") : null)
       : next && next.id === l.id ? h("p", { class: "card-foot small next" }, "Next up")
@@ -128,20 +158,22 @@ function levelCard(l, next, showTopic = true) {
     : h("div", { class: "card locked", "aria-disabled": "true", title: "Close the previous ticket in the career path to unlock this one" }, inner);
 }
 
-// ---- topics: theory first, then questions and tickets for each topic
+// ---- topics: grouped by the domains of the chosen exam; theory first, then questions and labs
 function topicsView() {
+  const exam = store.exam();
   const counts = bank ? countByTopic(bank) : null;
   const want = bank && bank.hasBook ? store.pref("sources", "all") : "all";
-  const next = store.nextLevel();
-  return TRACKS.map(track => h("section", { class: "track" },
-    h("h2", { class: "track-name" }, track.name),
-    TOPIC_ORDER.map(id => TOPIC_BY_ID.get(id)).filter(t => t.track === track.id).map(t => {
-      const levels = LEVELS.filter(l => LEVEL_TOPIC[l.id] === t.id);
+  const next = store.nextLevel(), list = store.levels();
+  return topicsByDomain(exam).map(domain => h("section", { class: "track" },
+    h("h2", { class: "track-name" }, domain.n ? `${domain.n}. ${domain.name}` : domain.name, domain.weight ? h("span", { class: "weight" }, `${domain.weight}% of the exam`) : null),
+    domain.topics.map(t => {
+      const levels = list.filter(l => LEVEL_TOPIC[l.id] === t.id);
       const c = counts ? counts[t.id] || { custom: 0, book: 0 } : null;
       const nq = c ? (want === "book" ? c.book : want === "custom" ? c.custom : c.custom + c.book) : 0;
       const split = c && bank.hasBook && want === "all" ? `${c.custom} custom · ${c.book} book` : c && bank.hasBook ? SOURCES[want].label + " questions" : "";
+      const only = topicOnly(t);
       return h("section", { class: "topic", id: `topic-${t.id}` },
-        h("header", { class: "topic-head" }, h("div", {}, h("h3", {}, t.name), h("p", { class: "muted small" }, t.blurb))),
+        h("header", { class: "topic-head" }, h("div", {}, h("h3", {}, t.name, only ? BADGE[only]() : null), h("p", { class: "muted small" }, t.blurb))),
         h("div", { class: "cards" },
           h("a", { class: "card theory" + (store.isStudied(t.id) ? " done" : ""), href: `#/study/${t.id}` },
             h("div", { class: "card-top" }, h("span", { class: "tag theory" }, "Theory")), h("h3", {}, "Study the theory"),
@@ -157,18 +189,22 @@ function topicsView() {
 
 // ------------------------------------------------------------ study page
 function study(t) {
+  const exam = store.exam();
   renderTopbar({ tag: "Theory", title: t.name });
   main.className = "study";
   const article = h("article", { class: "prose" }, h("p", { class: "muted" }, "Loading..."));
   const side = h("aside", { class: "study-side" });
-  const idx = TOPIC_ORDER.indexOf(t.id), prev = TOPIC_BY_ID.get(TOPIC_ORDER[idx - 1]), nextT = TOPIC_BY_ID.get(TOPIC_ORDER[idx + 1]);
+  const domains = topicsByDomain(exam), order = domains.flatMap(d => d.topics);
+  const domain = domains.find(d => d.topics.includes(t));
+  const idx = order.indexOf(t), prev = order[idx - 1], nextT = order[idx + 1];
+  const only = topicOnly(t);
   main.replaceChildren(h("div", { class: "study-wrap" },
-    h("div", { class: "study-main" }, h("p", { class: "eyebrow" }, TRACKS.find(k => k.id === t.track).name), h("h1", {}, t.name), h("p", { class: "muted lead" }, t.blurb), article,
+    h("div", { class: "study-main" }, h("p", { class: "eyebrow" }, `${EXAMS[exam].short} · ${domain.n ? `${domain.n}. ` : ""}${domain.name}`), h("h1", {}, t.name, only ? BADGE[only]() : null), h("p", { class: "muted lead" }, t.blurb), article,
       h("nav", { class: "study-nav" }, prev ? h("a", { class: "btn", href: `#/study/${prev.id}` }, `← ${prev.name}`) : h("span"), nextT ? h("a", { class: "btn", href: `#/study/${nextT.id}` }, `${nextT.name} →`) : h("span"))),
     side));
-  loadTheory().then(pages => { if (main.contains(article)) article.replaceChildren(renderMarkdown(pages[t.id] || "This page is not written yet.")); });
+  loadTheory().then(pages => { if (main.contains(article)) article.replaceChildren(renderMarkdown(theoryPage(pages, t.id) || "This page is not written yet.")); });
 
-  const levels = LEVELS.filter(l => LEVEL_TOPIC[l.id] === t.id);
+  const levels = store.levels().filter(l => LEVEL_TOPIC[l.id] === t.id);
   const renderSide = () => {
     const studied = store.isStudied(t.id);
     side.replaceChildren(...[
@@ -213,6 +249,8 @@ function variantTools(level) {
 let lastTemplate = null;     // so a lab with two templates alternates instead of repeating
 
 function play(level) {
+  // promotion exams have their own wording for the v2.0 blueprint
+  if (store.exam() === "v2" && level.v2) level = { ...level, ...level.v2 };
   const tag = level.check ? "Check" : level.practice ? "Variant" : TYPE[level.type];
   renderTopbar({ tag, title: level.title });
   main.className = "play " + level.type;
@@ -262,7 +300,7 @@ function showResult(level, res) {
     const gained = passed ? store.record(level, res.stars, res.seconds) : 0;
     if (passed) label = `+${gained} XP`;
     const after = store.rank().rank;
-    const next = LEVELS[LEVELS.indexOf(level) + 1];
+    const list = store.levels(), next = list[list.findIndex(l => l.id === level.id) + 1];
     const hasVariants = passed && level.type === "lab" && variantsOf(level.id).length > 0;
     body = [
       h("p", { class: "eyebrow" }, passed ? (level.type === "lab" ? "Ticket closed" : "Passed") : "Not yet"),
@@ -307,12 +345,18 @@ function route() {
   closeHandbook();
   window.scrollTo(0, 0);
 
+  // nothing else is shown until an exam version has been chosen
+  if (!store.examChosen() || location.hash === "#/exam") return renderChooser();
+
+  const exam = store.exam();
   const m = /^#\/(play|variant|check|study)\/([\w-]+)$/.exec(location.hash);
   const [kind, id] = m ? [m[1], m[2]] : ["home", null];
-  if (kind === "play" && LEVEL_BY_ID.has(id) && store.isUnlocked(id)) return play(LEVEL_BY_ID.get(id));
-  if (kind === "study" && TOPIC_BY_ID.has(id)) return study(TOPIC_BY_ID.get(id));
-  if (kind === "check" && TOPIC_BY_ID.has(id)) return play(checkLevel(TOPIC_BY_ID.get(id)));
-  if (kind === "variant" && LEVEL_BY_ID.has(id) && store.variantsOpen(id)) {
+  const level = LEVEL_BY_ID.get(id), inThisExam = level && (!level.only || level.only === exam);
+  const topic = TOPIC_BY_ID.get(id), topicHere = topic && topic[exam] !== null;
+  if (kind === "play" && inThisExam && store.isUnlocked(id)) return play(level);
+  if (kind === "study" && topicHere) return study(topic);
+  if (kind === "check" && topicHere) return play(checkLevel(topic));
+  if (kind === "variant" && inThisExam && store.variantsOpen(id)) {
     const variant = makeVariant(id, lastTemplate);
     if (variant) { lastTemplate = variant.skill; return play(variant); }
   }

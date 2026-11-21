@@ -1,4 +1,5 @@
-<!-- Study notes for each topic. Written for this project. Sections are split on the "topic:" markers. -->
+<!-- Study notes for each topic. Written for this project. Sections are split on the "topic:" markers.
+     A heading ending in {v1} or {v2} belongs to that exam version only. -->
 
 <!-- topic: fundamentals -->
 ## The two models
@@ -26,22 +27,39 @@ Networking is described in layers so that each layer only has to solve one probl
 
 Each switch port is its own **collision domain**. Each VLAN is one **broadcast domain**; only a router (or layer 3 switch) separates broadcast domains.
 
-## Cabling
+## Cables
 
-- Copper UTP: 100 metres maximum. Cat 5e carries 1 Gb/s, Cat 6 carries 10 Gb/s to about 55 m, Cat 6a to 100 m.
-- Multimode fibre: short runs inside a building or campus (hundreds of metres). Single-mode fibre: kilometres.
-- CRC errors with late collisions on a link usually mean a **duplex mismatch**.
-
-## IPv6 in one table
-
-| Type | Prefix | Like in IPv4 |
+| Cable | Reach | Notes |
 | --- | --- | --- |
-| Global unicast | 2000::/3 | Public addresses |
-| Unique local | FC00::/7 (FD00::/8 in practice) | Private RFC 1918 addresses |
-| Link-local | FE80::/10 | Only valid on the local link; every IPv6 interface has one |
-| Multicast | FF00::/8 | Replaces broadcast; FF02::1 is all nodes, FF02::2 all routers |
+| Copper UTP, Cat 5e | 100 m | 1 Gb/s |
+| Copper UTP, Cat 6 / 6a | 100 m | 10 Gb/s to about 55 m on Cat 6, the full 100 m on Cat 6a |
+| Multimode fibre | Hundreds of metres | Inside a building or campus; cheaper optics |
+| Single-mode fibre | Kilometres | Between buildings and sites; needs matching optics |
 
-Shorten an IPv6 address by dropping leading zeros in each group and replacing **one** run of all-zero groups with `::`.
+- Ethernet over copper uses pins **1, 2** and **3, 6** at 10 and 100 Mb/s, and all four pairs at 1 Gb/s.
+- A **straight-through** cable joins unlike devices (PC to switch, switch to router). A **crossover** cable joins like devices (switch to switch, PC to PC). Modern ports detect this themselves (auto-MDIX), so the wrong type only matters on old equipment.
+- Fibre needs both ends to use the same type and wavelength, and the transmit strand of one end to reach the receive strand of the other. `show interfaces transceiver` reports the light levels in dBm; a receive level below the optic's minimum means a dirty connector, a bent or over-long fibre, or mismatched optics.
+
+## Reading interface errors
+
+`show interfaces g0/1` counts what went wrong on a link:
+
+| Counter | Usual cause |
+| --- | --- |
+| CRC, input errors | Damaged frames: bad cable, interference, or a duplex mismatch |
+| Collisions | Normal only on half duplex |
+| **Late collisions** | A **duplex mismatch** (one end full, one end half), or a cable that is too long |
+| Runts and giants | Frames shorter than 64 or longer than 1518 bytes: a faulty network card or a mismatch |
+| Output drops | The link is congested |
+
+Speed and duplex should be auto on both ends, or fixed identically on both. One end fixed and the other auto usually ends as a duplex mismatch: the link comes up, works slowly, and the half-duplex side counts late collisions. A **speed** mismatch is easier to spot, because the link does not come up at all.
+
+## Network designs {v1}
+
+- **Two-tier (collapsed core)**: access switches connect to a combined core and distribution layer. Typical for one building.
+- **Three-tier**: access, distribution and core as separate layers, for large campuses.
+- **Spine-leaf**: every leaf switch connects to every spine, used in data centres for predictable paths.
+- **WAN**, **small office/home office** and **cloud** designs connect sites and services beyond the campus.
 
 > Private IPv4 ranges: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16. They are not routed on the Internet, which is why NAT exists.
 
@@ -172,23 +190,261 @@ ip default-gateway 192.168.1.1
 
 > Common mistakes: forgetting `no shutdown`; a mask on the host that does not match the router's; putting the switch's management address on a physical port.
 
+<!-- topic: ipv6 -->
+## Reading an IPv6 address
+
+An IPv6 address is 128 bits, written as eight groups of four hexadecimal digits. Two rules shorten it:
+
+1. Drop leading zeros in each group: `0db8` becomes `db8`, `0000` becomes `0`.
+2. Replace **one** run of all-zero groups with `::`. Only once, or the address would be ambiguous.
+
+`2001:0db8:0000:0000:0000:ff00:0042:8329` becomes `2001:db8::ff00:42:8329`.
+
+## Address types
+
+| Type | Prefix | Used for |
+| --- | --- | --- |
+| Global unicast | 2000::/3 | Routable on the Internet, like public IPv4 |
+| Unique local | FC00::/7 (FD00::/8 in practice) | Inside one organisation, like private IPv4 |
+| Link-local | FE80::/10 | Only on the local link. Every IPv6 interface has one, and routing protocols use it as the next hop |
+| Multicast | FF00::/8 | One to many. FF02::1 is all nodes, FF02::2 is all routers. IPv6 has no broadcast |
+| Loopback | ::1/128 | The host itself |
+
+## Prefix sizes
+
+- **/64** for every LAN. The first 64 bits are the network, the last 64 the interface ID. SLAAC only works with /64.
+- **/127** (or /126) on point-to-point links between routers.
+- **/128** is a single host, used for loopbacks and host routes.
+- **/48** is a typical allocation to one site, which leaves 16 bits to number 65,536 /64 subnets. A /56 gives 256 of them.
+
+To count subnets, subtract the prefix you were given from the prefix you will use: from a /48, /64 subnets use 16 bits, so 2 to the power of 16.
+
+## Modified EUI-64
+
+A host can build its own 64-bit interface ID from its 48-bit MAC address:
+
+1. Split the MAC in half: `0012.34` and `56.789a`.
+2. Insert `FFFE` in the middle: `0012:34FF:FE56:789A`.
+3. Flip the seventh bit of the first byte (the universal/local bit): `00` becomes `02`.
+
+Result: `0212:34FF:FE56:789A`. With the prefix `2001:db8:1:1::/64` the address is `2001:db8:1:1:212:34ff:fe56:789a`. Spot an EUI-64 address by the `ff:fe` in the middle.
+
+## How a host gets an address
+
+- **Static**: typed in by hand.
+- **SLAAC**: the router advertises the /64 prefix and the host builds the rest itself.
+- **DHCPv6**: a server hands out the address (stateful) or only extras such as DNS (stateless).
+
+Neighbour Discovery (NDP) replaces ARP. Neighbour solicitation and advertisement find MAC addresses; router solicitation and advertisement find the gateway and prefix.
+
+## Configuring a router
+
+```
+ipv6 unicast-routing
+interface g0/0
+ ipv6 address 2001:db8:1:1::1/64
+ no shutdown
+interface g0/1
+ ipv6 address 2001:db8:1:2::/64 eui-64
+```
+
+Without `ipv6 unicast-routing` the router has addresses but does not forward IPv6 packets or send router advertisements.
+
+## IPv6 static routes
+
+The same four kinds as IPv4, with `ipv6 route`:
+
+| Kind | Example |
+| --- | --- |
+| Network | `ipv6 route 2001:db8:2::/64 2001:db8:12::2` |
+| Default | `ipv6 route ::/0 2001:db8:12::2` |
+| Host | `ipv6 route 2001:db8:2::10/128 2001:db8:12::2` |
+| Floating | `ipv6 route 2001:db8:2::/64 2001:db8:13::2 200` |
+
+If the next hop is a link-local address you must also name the exit interface, because the same FE80:: address can exist on every link.
+
+## Check your work
+
+`show ipv6 interface brief` lists each interface with its link-local and global addresses. `show ipv6 route` shows the table (`C` connected, `L` local, `S` static). From a host, `ping` and `tracert` accept IPv6 addresses.
+
+> The simulator in this game does not run IPv6 yet, so this topic is theory and questions only. Common mistakes: using `::` twice; forgetting `ipv6 unicast-routing`; a link-local next hop without the exit interface.
+
+<!-- topic: virtualization -->
+## Why virtualize
+
+One physical server used to run one operating system and mostly sat idle. Virtualization lets one machine run many isolated workloads, which saves hardware, power and time: a new server becomes a file you copy.
+
+## Hypervisors and virtual machines
+
+A **hypervisor** shares a physical host's CPU, memory, storage and network cards between **virtual machines** (VMs). Each VM has its own full operating system and believes it has its own hardware.
+
+| | Type 1 (bare metal) | Type 2 (hosted) |
+| --- | --- | --- |
+| Runs on | The hardware directly | An ordinary operating system |
+| Used for | Data centres and servers | Labs and desktops |
+| Examples | VMware ESXi, Microsoft Hyper-V, KVM | VirtualBox, VMware Workstation |
+
+## Containers
+
+A **container** packages one application with its libraries and shares the host's operating system kernel instead of bringing its own.
+
+| | Virtual machine | Container |
+| --- | --- | --- |
+| Contains | A whole operating system | One application and its dependencies |
+| Size and start time | Gigabytes, tens of seconds | Megabytes, about a second |
+| Isolation | Strong: separate kernels | Lighter: shared kernel |
+| Managed by | A hypervisor | A container engine such as Docker, often orchestrated by Kubernetes |
+
+## How they reach the network
+
+- Each VM has a **virtual NIC** with its own MAC address.
+- The hypervisor runs a **virtual switch** that connects the virtual NICs to each other and to the host's physical NICs.
+- VMs on one host often sit in different VLANs, so the switch port facing the host is usually a **trunk**, and frequently several ports bundled in an EtherChannel.
+
+To the physical network, a host with twenty VMs looks like twenty MAC addresses behind one port. That matters for port security limits and for the allowed VLAN list on the trunk.
+
+## Virtual routing and forwarding {v1}
+
+A **VRF** gives one router several separate routing tables, so two customers can use the same addresses without clashing. It does at layer 3 what a VLAN does at layer 2.
+
+> Common mistakes: an access port (one VLAN) toward a host that carries VMs in several VLANs; a port security maximum of 1 on a virtualization host port.
+
+<!-- topic: clients -->
+## The four things a host needs
+
+To reach anything, a host needs an **IP address**, a **subnet mask**, a **default gateway** in its own subnet, and a **DNS server**. Most client problems are one of these being wrong or missing, so look at them before anything else.
+
+## The same check on three systems
+
+| Task | Windows | macOS | Linux |
+| --- | --- | --- | --- |
+| Show address, mask, gateway | `ipconfig /all` | `ifconfig`, `networksetup -getinfo Wi-Fi` | `ip addr`, `ip route` |
+| Renew the DHCP lease | `ipconfig /release` then `/renew` | `sudo ipconfig set en0 DHCP` | `sudo dhclient -r` then `dhclient`, or `nmcli` |
+| Test reachability | `ping` | `ping` | `ping` |
+| Show the path | `tracert` | `traceroute` | `traceroute`, `tracepath` |
+| Look up a name | `nslookup` | `nslookup`, `dig` | `dig`, `nslookup` |
+| Show the ARP table | `arp -a` | `arp -a` | `ip neigh` |
+| Show Wi-Fi details | `netsh wlan show interfaces` | Option-click the Wi-Fi icon | `nmcli device wifi`, `iw dev` |
+
+## Working outward
+
+1. **Is there a link?** Cable in, or Wi-Fi associated to the right SSID.
+2. **Is there a sensible address?** A `169.254.x.x` address means DHCP did not answer.
+3. **Ping the default gateway.** A failure here is local: wrong mask, wrong gateway, wrong VLAN.
+4. **Ping something beyond the gateway by address.** A failure here is routing, an ACL or NAT.
+5. **Ping it by name.** If the address works and the name does not, the fault is DNS.
+
+## Wireless clients
+
+- **Wrong security settings.** A client set for WPA2 cannot join a WPA3-only network, and a wrong pre-shared key shows up as a join that never completes.
+- **Weak signal.** Low signal strength or a poor signal-to-noise ratio gives slow, dropping connections even though the client is associated.
+- **Wrong band.** Older clients only see 2.4 GHz.
+- **Associated but no address.** The Wi-Fi works; the problem is DHCP or the VLAN behind the access point.
+
+> In this game the PCs use the Windows command set (`ipconfig`, `ping`, `tracert`). The macOS and Linux commands are theory only.
+
+<!-- topic: wireless -->
+## Bands and channels
+
+| Band | Non-overlapping channels | Trade-off |
+| --- | --- | --- |
+| 2.4 GHz | Three: **1, 6 and 11** | Longer range, crowded, slower |
+| 5 GHz | Around two dozen | Shorter range, much less interference, faster |
+| 6 GHz | Many more | Shortest range, newest clients only |
+
+In 2.4 GHz each channel is about 22 MHz wide but channels are only 5 MHz apart, which is why only 1, 6 and 11 avoid each other. Neighbouring access points should use different non-overlapping channels.
+
+## What happens to a radio signal
+
+- **Absorption**: walls, water and people soak up the signal. Denser material absorbs more.
+- **Reflection**: metal and glass bounce it, creating several copies that arrive at different times (multipath).
+- **Refraction and diffraction**: the signal bends passing through or around objects.
+- **Scattering**: rough surfaces break it into weaker pieces.
+- **Attenuation**: it weakens with distance in any case. Higher frequencies fade faster, which is why 5 GHz reaches less far.
+
+Signal strength is measured as **RSSI** in dBm, a negative number: -50 is strong, -80 is poor. What decides quality is the **signal-to-noise ratio**, the gap between the signal and the background noise.
+
+## Causes of interference
+
+- **Co-channel**: other access points on the same channel. They take turns, so everyone slows down.
+- **Adjacent channel**: access points on overlapping channels, such as 1 and 3. Worse than co-channel, because the transmissions collide instead of taking turns.
+- **Non-Wi-Fi sources**: microwave ovens, Bluetooth, cordless phones and baby monitors, mostly in 2.4 GHz.
+- **Physical obstacles**: concrete, metal shelving, lift shafts, water tanks.
+
+## Security protocols
+
+| Protocol | Encryption | Status |
+| --- | --- | --- |
+| WEP | RC4 | Broken; never use |
+| WPA | TKIP | Deprecated |
+| WPA2 | AES-CCMP | Still common |
+| WPA3 | AES-GCMP, with **SAE** in place of the pre-shared key handshake | Current |
+
+**Personal** mode uses one shared passphrase. **Enterprise** mode uses 802.1X with a RADIUS server, so each user logs in with their own credentials.
+
+## Kinds of access point
+
+- **Standalone (autonomous)**: configured one by one. Its switch port is usually a **trunk**, because the AP maps each SSID to a VLAN itself.
+- **Controller-based (lightweight)**: managed by a wireless LAN controller and tunnelled to it with **CAPWAP**. In the usual local mode its switch port is an **access port**, because user traffic travels inside the tunnel.
+- **Cloud-managed**: configured from a web dashboard hosted by the vendor.
+
+An **SSID** is the network name. One access point's coverage is a BSS; several access points sharing an SSID form an ESS, which lets clients roam.
+
+## Controller details {v1}
+
+The v1.1 exam also asks about the wireless LAN controller itself: its management, service and dynamic interfaces, its link aggregation group to the switch, creating a WLAN in the web interface, and AP modes such as FlexConnect, monitor and sniffer.
+
+> Common mistakes: channels 1, 4, 8 and 11 in 2.4 GHz (they overlap); turning power up to fix coverage when the real problem is interference; a trunk port for a lightweight AP in local mode.
+
 <!-- topic: switching -->
-## Spanning Tree Protocol
+## Why spanning tree exists
 
-Redundant links between switches create loops, and Ethernet frames have no hop limit, so a loop means a broadcast storm. STP blocks just enough ports to leave one loop-free path.
+Redundant links between switches create loops, and Ethernet frames have no hop limit, so one broadcast in a loop multiplies until the network stops. Spanning tree blocks just enough ports to leave one loop-free path, and unblocks them when a link fails. Current Cisco switches run **Rapid PVST+**: rapid spanning tree, with a separate tree for each VLAN.
 
-- The switch with the lowest **bridge ID** (priority, then MAC address) becomes the **root bridge**. Default priority is 32768, so set it lower on the switch you want as root.
-- Every other switch picks one **root port**: its lowest-cost path to the root.
-- Each segment has one **designated port**. Any port that is neither is **blocked**.
-- Costs: 10 Mb/s is 100, 100 Mb/s is 19, 1 Gb/s is 4, 10 Gb/s is 2.
+## Electing the root and choosing ports
 
-Classic STP takes a port through blocking, listening (15 s), learning (15 s) and forwarding. Rapid STP (RSTP, the default as Rapid PVST+ on current switches) converges in a second or two and uses discarding, learning and forwarding.
+1. The switch with the lowest **bridge ID** (priority, then MAC address) becomes the **root bridge**. The default priority is 32768, so by default the oldest switch wins.
+2. Every other switch picks one **root port**: its lowest-cost path to the root.
+3. Each link gets one **designated port**, the end closer to the root. All ports on the root bridge are designated.
+4. Any port left over is an **alternate** port (a backup path to the root) and is blocked.
 
-**PortFast** puts an access port straight into forwarding, for ports with one end device. **BPDU Guard** shuts such a port down (err-disabled) if a switch is ever plugged into it.
+Path cost by speed: 10 Mb/s is 100, 100 Mb/s is 19, 1 Gb/s is 4, 10 Gb/s is 2.
+
+| Rapid PVST+ state | Forwards frames | Learns MAC addresses |
+| --- | --- | --- |
+| Discarding | No | No |
+| Learning | No | Yes |
+| Forwarding | Yes | Yes |
+
+Older 802.1D spanning tree used blocking, listening, learning and forwarding and took 30 to 50 seconds to converge. Rapid spanning tree takes a second or two.
+
+## Choosing the root on purpose
+
+```
+spanning-tree mode rapid-pvst
+spanning-tree vlan 10 root primary
+spanning-tree vlan 10 root secondary
+spanning-tree vlan 10 priority 4096
+```
+
+`root primary` lowers the priority enough to win; `root secondary` on another switch makes it take over if the first fails. Priorities are set in steps of 4096. Check with `show spanning-tree vlan 10`: it names the root, and gives each port's role and state.
+
+## Protecting the tree
+
+| Feature | Where | What it does |
+| --- | --- | --- |
+| **PortFast** | Access ports with one end device | Skips straight to forwarding, so a PC gets its address at once |
+| **BPDU Guard** | The same access ports | Shuts the port (err-disabled) if a BPDU arrives, meaning a switch was plugged in |
+| **Root Guard** | Ports facing switches that must never become root | Blocks the port if a better BPDU arrives there; recovers by itself when it stops |
+| **Loop Guard** | Blocked and root ports on fibre uplinks | If BPDUs stop arriving, keeps the port blocked instead of letting it forward and cause a loop |
+
+## BPDU Filter {v1}
+
+BPDU Filter stops a port sending or processing BPDUs. It hides spanning tree from the attached device and can create a loop if used carelessly, so BPDU Guard is the safer choice on access ports.
 
 ## EtherChannel
 
-Several physical links bundled into one logical link: more bandwidth, and STP sees one link so nothing is blocked.
+Several physical links bundled into one logical link: more bandwidth, and spanning tree sees one link so nothing is blocked.
 
 | Protocol | Modes that form a channel |
 | --- | --- |
@@ -196,18 +452,39 @@ Several physical links bundled into one logical link: more bandwidth, and STP se
 | PAgP (Cisco) | desirable + desirable, or desirable + auto |
 | Static | on + on |
 
-Two passive (or two auto) ends never form a channel. Member ports must match in speed, duplex, mode and VLANs. Up to 8 active links.
+```
+interface range g0/1 - 2
+ channel-group 1 mode active
+interface port-channel 1
+ switchport mode trunk
+```
+
+- Two passive ends (or two auto ends) never form a channel.
+- Member ports must match in speed, duplex, mode and VLANs. Configure the logical `port-channel` interface afterwards, not the members.
+- A **layer 3** EtherChannel is the same bundle with `no switchport` and an IP address on the port-channel interface.
+- `show etherchannel summary`: `SU` beside the port-channel means layer 2 and in use; `P` beside a member means it is bundled.
+
+## Ports for end devices
+
+| Device | Port setup |
+| --- | --- |
+| PC, printer, IoT device | Access port in its VLAN, PortFast, BPDU Guard |
+| IP phone with a PC behind it | Access port with two VLANs: `switchport access vlan 10` for the PC and `switchport voice vlan 20` for the phone |
+| Standalone access point | Trunk, one VLAN per SSID |
+| Controller-based access point | Access port; user traffic travels in the CAPWAP tunnel |
+| Virtualization host | Trunk, often an EtherChannel |
+| Firewall or other appliance | Trunk or routed port, depending on its design |
+
+**Power over Ethernet** lets the switch power phones, access points and cameras over the data cable. The device asks for a power class and the switch grants it from a limited budget. `show power inline` lists what each port is supplying; `power inline never` turns it off on a port.
 
 ## Discovery protocols
 
-- **CDP**: Cisco proprietary, on by default. `show cdp neighbors` lists directly connected Cisco devices and the ports between you.
-- **LLDP**: the vendor-neutral equivalent (IEEE 802.1AB). `lldp run` enables it.
+- **CDP** is Cisco proprietary and on by default. `show cdp neighbors` lists directly connected Cisco devices with the local and remote port; `show cdp neighbors detail` adds the neighbour's IP address and software version.
+- **LLDP** is the vendor-neutral standard (IEEE 802.1AB). Enable it with `lldp run`; read it with `show lldp neighbors`.
 
-## Wireless essentials
+Both are the quickest way to check that the cabling matches the network diagram: the neighbour and ports they report are what is really connected.
 
-- 2.4 GHz has only three non-overlapping channels: **1, 6 and 11**. 5 GHz has many more and less interference, with shorter range.
-- An **autonomous** AP is configured on its own. A **lightweight** AP is managed by a **wireless LAN controller** (WLC) and tunnels to it with **CAPWAP**.
-- Security: WPA2 uses AES-CCMP; WPA3 replaces the pre-shared key handshake with **SAE**. WEP and the original WPA are broken.
+> Common mistakes: leaving the root bridge to chance; PortFast on a port that leads to another switch; one EtherChannel end in passive and the other in passive; a trunk allowed list that differs between the two ends of a bundle.
 
 <!-- topic: vlans -->
 ## Why VLANs
@@ -296,47 +573,6 @@ A multilayer switch can route between VLANs itself with one SVI per VLAN (`inter
 
 > Common mistakes: the switch port left as an access port; the wrong VLAN number in `encapsulation dot1q`; PCs whose default gateway is not the subinterface address of their own VLAN.
 
-<!-- topic: l2security -->
-## Port security
-
-Port security limits which, and how many, MAC addresses may use an access port. It stops someone unplugging a PC and connecting their own device or a small switch.
-
-```
-interface fa0/1
- switchport mode access
- switchport port-security
- switchport port-security maximum 1
- switchport port-security violation restrict
- switchport port-security mac-address sticky
-```
-
-- The port must be a **static access port** first; port security is refused on a dynamic port.
-- `switchport port-security` on its own turns the feature on. The other lines only set options; without the first line nothing is enforced.
-- **Sticky** learning takes the first address seen and writes it into the running configuration, so you do not type MAC addresses by hand.
-
-## Violation modes
-
-| Mode | Frames from an unknown device | Counter and log | Port |
-| --- | --- | --- | --- |
-| `protect` | Dropped | No | Stays up |
-| `restrict` | Dropped | Yes | Stays up |
-| `shutdown` (default) | Dropped | Yes | Goes **err-disabled** until someone runs `shutdown` then `no shutdown` |
-
-## Edge port protection
-
-- `spanning-tree portfast`: the port forwards immediately, so a PC gets its DHCP address without waiting 30 seconds.
-- `spanning-tree bpduguard enable`: if a BPDU arrives (meaning a switch was connected), the port is err-disabled.
-
-## Unused ports
-
-Shut them down, and ideally move them to an unused VLAN: `interface range fa0/3 - 8` then `shutdown`.
-
-## Check your work
-
-`show port-security` lists secured ports with their limits and violation counts. `show port-security interface fa0/1` gives the detail for one port, including the last address seen.
-
-> Common mistakes: setting the options but never the bare `switchport port-security` line; forgetting `switchport mode access`; leaving the default `shutdown` mode when the request was to keep the port up.
-
 <!-- topic: routing -->
 ## How a router chooses a route
 
@@ -367,7 +603,26 @@ Each router decides independently, and a reply needs a route back. A ping that r
 
 ## First-hop redundancy
 
-Hosts have one default gateway. If that router fails, they are cut off. A first-hop redundancy protocol such as **HSRP** lets two routers share a **virtual IP and MAC address**: one is active, the other standby. Hosts point at the virtual address and never notice a failover. Default priority is 100; the highest priority becomes active.
+Hosts have one default gateway. If that router fails, they are cut off. A first-hop redundancy protocol lets two or more routers share a **virtual IP and MAC address**. Hosts point at the virtual address and never notice a failover.
+
+| | HSRP | VRRP |
+| --- | --- | --- |
+| Standard | Cisco | Open (IETF) |
+| Roles | Active and standby | Master and backup |
+| Default priority | 100, highest wins | 100, highest wins |
+| Preemption (a better router takes over when it returns) | Off by default | On by default |
+| Virtual IP | A separate address | Can be a router's own interface address |
+
+## Reading their status
+
+`show standby brief` (HSRP) and `show vrrp brief` (VRRP) give one line per group:
+
+```
+Interface   Grp  Pri P State   Active          Standby         Virtual IP
+Gi0/0       1    110 P Active  local           192.168.1.3     192.168.1.1
+```
+
+Read it as: on G0/0, group 1, this router has priority 110 with preemption (`P`), it is the **Active** router, the standby is 192.168.1.3, and hosts should use 192.168.1.1 as their gateway. Two routers both showing Active for the same group cannot hear each other's hellos: look for a layer 2 problem between them.
 
 > Common mistakes: comparing metrics across different protocols (that is what administrative distance is for); forgetting the return route; expecting a default route to win over a more specific one.
 
@@ -391,6 +646,16 @@ ip route 0.0.0.0 0.0.0.0 203.0.113.1
 ```
 
 It is the right tool for a **stub** network with only one way out, and for sending Internet traffic toward the ISP. `show ip route` marks it `S*` and reports a "Gateway of last resort".
+
+## Host routes
+
+A route to one single address uses the mask 255.255.255.255 (a /32):
+
+```
+ip route 10.2.0.50 255.255.255.255 10.0.13.2
+```
+
+Because the longest match wins, a host route overrides whatever route covers the rest of that subnet. It is used to send one server's traffic a different way. IPv6 has the same four kinds of static route; they are on the IPv6 page.
 
 ## Floating static routes
 
@@ -453,7 +718,38 @@ Two routers on a link become neighbours only if all of these match:
 5. Neither interface is passive.
 6. Matching authentication, if used.
 
-The goal state is **FULL**. On Ethernet, routers elect a **designated router** (highest priority, then highest router ID) and a backup; the others show as DROTHER.
+The goal state is **FULL**.
+
+## Broadcast and point-to-point links
+
+OSPF treats an Ethernet link as a **broadcast** network, where many routers could be present. To avoid every router pairing with every other, they elect a **designated router** (DR) and a backup (BDR): the highest interface priority wins, then the highest router ID. Priority 0 means "never". The others show as DROTHER and only become FULL with the DR and BDR.
+
+On a link with exactly two routers the election is wasted effort. Setting both ends to point-to-point skips it:
+
+```
+interface g0/1
+ ip ospf network point-to-point
+```
+
+Both ends must use the same network type. In `show ip ospf neighbor` a point-to-point neighbour shows `FULL/ -` instead of `FULL/DR`.
+
+## OSPFv3 for IPv6 {v2}
+
+OSPFv3 is the same protocol carrying IPv6 routes. What stays: areas, cost, the neighbour rules, DR election and a **32-bit router ID** written like an IPv4 address. What changes:
+
+- It is enabled **on the interface**, not with `network` statements.
+- Neighbours use their **link-local** addresses as next hops.
+- If the router has no IPv4 address at all, the router ID must be set by hand.
+
+```
+ipv6 unicast-routing
+ipv6 router ospf 1
+ router-id 1.1.1.1
+interface g0/0
+ ipv6 ospf 1 area 0
+```
+
+Check with `show ipv6 ospf neighbor` and `show ipv6 route ospf`.
 
 ## Check your work
 
@@ -465,33 +761,6 @@ The goal state is **FULL**. On Ethernet, routers elect a **designated router** (
 | `show ip route` | `O` routes learned from neighbours |
 
 > Common mistakes: an interface missing from the `network` statements; one end in a different area; making the link to a neighbour passive instead of the LAN; a wrong wildcard mask.
-
-<!-- topic: services -->
-## Time, logs and monitoring
-
-| Service | Port | What to remember |
-| --- | --- | --- |
-| **NTP** | UDP 123 | Keeps clocks in sync so logs can be compared. **Stratum** counts hops from the reference clock: a client of a stratum 2 server is stratum 3 |
-| **Syslog** | UDP 514 | Sends log messages to a server. Severity runs from 0 (most severe) to 7 |
-| **SNMP** | UDP 161, traps on 162 | Monitoring. v1 and v2c use clear-text community strings; **v3** adds authentication and encryption |
-| **DNS** | UDP/TCP 53 | Names to addresses. `A` record is IPv4, `AAAA` is IPv6, `MX` is mail, `PTR` is the reverse |
-| **TFTP** | UDP 69 | Simple file transfer with no login, used for images and configs |
-| **FTP** | TCP 20/21 | File transfer with a login, in clear text |
-
-Syslog severities, from 0 to 7: Emergency, Alert, Critical, Error, Warning, Notice, Informational, Debug. A mnemonic: "Every Awesome Cisco Engineer Will Need Ice cream Daily". Setting a level logs that level and everything more severe.
-
-## Quality of service
-
-When a link is congested, QoS decides what waits and what is dropped.
-
-- **Classification and marking**: identify traffic and label it. **DSCP** is six bits in the IP header and survives across routers. **CoS** is three bits in the 802.1Q tag, so it only exists on trunks.
-- **Queuing**: voice goes in a priority queue so it is sent first.
-- **Policing** drops or re-marks traffic above a rate. **Shaping** buffers it and sends it later, smoothing bursts.
-- Voice needs low delay, low jitter and low loss more than it needs bandwidth.
-
-## Remote management
-
-SSH (TCP 22) encrypts the session. Telnet (TCP 23) sends everything, including passwords, in clear text and should be disabled.
 
 <!-- topic: dhcp -->
 ## What DHCP does
@@ -528,7 +797,19 @@ interface g0/0
  ip helper-address 10.0.0.5
 ```
 
-The router forwards the request as a unicast to that server and relays the answer back.
+The router forwards the request as a unicast to that server and relays the answer back. When relay fails, check three things: the helper address is on the interface facing the **clients**, the router can reach the server, and the server has a pool for the clients' subnet with a route back to it.
+
+## A router as a DHCP client
+
+A router interface can take its own address from DHCP, which is common on a link to an ISP:
+
+```
+interface g0/1
+ ip address dhcp
+ no shutdown
+```
+
+`show ip interface brief` then lists the address with the method `DHCP`, and the router installs a default route from the gateway it was given.
 
 ## Check your work
 
@@ -584,26 +865,171 @@ Ping something outside from an inside host, then run `show ip nat translations` 
 
 > Common mistakes: an inside interface (or subinterface) not marked `ip nat inside`; an ACL that does not cover every inside subnet; leaving out `overload`; NAT working but the router having no default route.
 
+<!-- topic: services -->
+## DNS: names to addresses
+
+Hosts are reached by name, and DNS turns the name into an address. Each kind of answer is a record type:
+
+| Record | Maps | Example use |
+| --- | --- | --- |
+| **A** | A name to an IPv4 address | `www.example.com` to 203.0.113.10 |
+| **AAAA** | A name to an IPv6 address | The same site over IPv6 |
+| **CNAME** | A name to another name (an alias) | `shop.example.com` points at `www.example.com` |
+| **MX** | A domain to its mail servers, with a priority | Where to deliver mail for `@example.com` |
+| **NS** | A domain to its authoritative name servers | Who answers for `example.com` |
+| **PTR** | An address back to a name (reverse lookup) | Used by mail servers and logs |
+
+DNS uses UDP port 53, and TCP 53 for large answers.
+
+## Diagnosing a name problem
+
+1. **Ping the address.** If that works and the name does not, the network is fine and DNS is at fault.
+2. **Ask DNS directly**: `nslookup www.example.com` (or `dig`). It shows which server answered and what it said.
+3. Read the answer:
+
+| What you see | Likely cause |
+| --- | --- |
+| The server does not respond | Wrong DNS server on the host, or it is unreachable |
+| "Non-existent domain" | The record is missing or the name is mistyped |
+| Web works by address but not by name | Missing or wrong A, AAAA or CNAME record |
+| Mail to the domain bounces | Missing or wrong MX record, or the MX name has no A record |
+| Mail is rejected as suspicious | No PTR record for the sending server |
+| One site resolves, the whole domain does not | NS records point at the wrong servers |
+
+On a router, `ip name-server 8.8.8.8` sets its DNS server, and `no ip domain-lookup` stops it treating a mistyped command as a name to resolve.
+
+## Secure file transfer {v2}
+
+Device images and configurations should be copied over an encrypted session. Both secure options run inside SSH on TCP 22:
+
+| | SCP | SFTP |
+| --- | --- | --- |
+| What it is | Simple copy over SSH | A fuller file protocol over SSH: list, rename, delete, resume |
+| On IOS | The device can be the server or the client | The device is a client |
+
+```
+ip scp server enable
+copy running-config scp://admin@10.0.99.50/hq-r1.cfg
+copy scp://admin@10.0.99.50/image.bin flash:
+```
+
+SCP needs SSH working first and an account with privilege 15. After copying an image, `verify /md5 flash:image.bin` confirms it arrived intact.
+
+## FTP and TFTP {v1}
+
+- **TFTP** (UDP 69): no login and no encryption. Simple, and still used in labs and for recovery.
+- **FTP** (TCP 20 and 21): has a login, but sends it and the data in clear text.
+
+## NTP: keeping time {v1}
+
+NTP (UDP 123) keeps device clocks in step, so that log messages from different devices can be put in order. **Stratum** counts hops from the reference clock: a device synchronised to a stratum 2 server is stratum 3. `ntp server 10.0.0.1` makes a device a client; `ntp master` makes it a source for others; `show ntp status` reports whether it is synchronised.
+
+## Quality of service {v1}
+
+When a link is congested, QoS decides what waits and what is dropped.
+
+- **Classification and marking**: identify traffic and label it. **DSCP** is six bits in the IP header and survives across routers. **CoS** is three bits in the 802.1Q tag, so it exists only on trunks.
+- **Queuing**: voice goes in a priority queue so it is sent first.
+- **Policing** drops or re-marks traffic above a rate. **Shaping** buffers it and sends it later, smoothing bursts.
+- Voice needs low delay, low jitter and low loss more than it needs bandwidth.
+
+> Syslog and SNMP have their own page. Common mistakes: blaming the network when only name resolution fails; a CNAME pointing at a name that has no A record; copying device files with TFTP across an untrusted network.
+
+<!-- topic: monitoring -->
+## Syslog: reading a message
+
+Every IOS device describes what happens to it in log messages. They all follow one format:
+
+```
+*Mar  1 09:41:07.123: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+```
+
+| Part | Example | Meaning |
+| --- | --- | --- |
+| Timestamp | `*Mar 1 09:41:07.123` | When. A leading `*` means the clock is not synchronised |
+| Facility | `LINK` | Which part of the system is reporting: LINK, LINEPROTO, OSPF, SYS, SEC |
+| Severity | `3` | How serious, from 0 to 7 |
+| Mnemonic | `UPDOWN` | A short code for the event |
+| Description | `Interface ... changed state to up` | The detail |
+
+You see these in the labs every time an interface or an OSPF neighbour changes.
+
+## Severity levels
+
+| Level | Name | Example |
+| --- | --- | --- |
+| 0 | Emergency | The system is unusable |
+| 1 | Alert | Act immediately |
+| 2 | Critical | Hardware failure |
+| 3 | Error | An interface went down |
+| 4 | Warning | A configuration problem |
+| 5 | Notice | A neighbour came up; an interface was shut down by an administrator |
+| 6 | Informational | An ACL logged a packet |
+| 7 | Debugging | Debug output |
+
+Lower numbers are more serious. A mnemonic: "Every Awesome Cisco Engineer Will Need Ice cream Daily". Choosing a level logs that level **and everything more severe**: `logging trap 4` sends levels 0 to 4.
+
+## Where messages go
+
+| Destination | Command | Default |
+| --- | --- | --- |
+| Console | `logging console` | On, all levels |
+| Remote sessions | `terminal monitor` in the SSH session | Off |
+| Memory buffer | `logging buffered`, read with `show logging` | Varies |
+| Syslog server | `logging host 10.0.0.50` and `logging trap <level>` | Off; UDP 514 |
+
+`service timestamps log datetime msec` adds proper timestamps. Accurate time across devices needs NTP.
+
+Syslog servers also sort messages by a **facility code** in the protocol itself. Cisco devices send as **local7** unless `logging facility` changes it; local0 to local7 are the codes left free for network equipment.
+
+## SNMP: asking devices for numbers
+
+Syslog is the device telling you things. SNMP is a management station asking, on a schedule.
+
+- A **manager** (the monitoring system) polls an **agent** on each device.
+- The agent exposes values in a **MIB**, a tree of variables; each one is addressed by an **OID**.
+- **Get** reads a value, **Set** changes one, and a **Trap** or **Inform** is the agent speaking first when something happens. An Inform is acknowledged; a Trap is not.
+- The agent listens on UDP 161; traps go to the manager on UDP 162.
+
+| Version | Security |
+| --- | --- |
+| SNMPv1, v2c | A community string sent in clear text |
+| SNMPv3 | Usernames, authentication and encryption |
+
+SNMP is what draws interface graphs and raises "CPU high" alarms.
+
+> Common mistakes: reading severity the wrong way round (0 is worst); expecting log messages in an SSH session without `terminal monitor`; using SNMPv2c across an untrusted network.
+
 <!-- topic: security -->
-## The vocabulary
-
-- A **vulnerability** is a weakness. An **exploit** is a way to use it. A **threat** is someone or something that might. **Mitigation** reduces the risk.
-- Security aims to protect **confidentiality, integrity and availability**.
-- **Social engineering** attacks people, not machines: phishing (email), spear phishing (targeted), tailgating (following someone through a door).
-
 ## AAA
 
 - **Authentication**: who are you?
 - **Authorization**: what are you allowed to do?
 - **Accounting**: what did you do?
 
+A device can check logins against its own **local usernames**, or act as a **client** of a central AAA server so that accounts are managed in one place.
+
 | | TACACS+ | RADIUS |
 | --- | --- | --- |
-| Transport | TCP 49 | UDP 1812 and 1813 |
+| Transport | TCP 49 | UDP 1812 (authentication) and 1813 (accounting) |
 | Encrypts | The whole payload | Only the password |
-| Typical use | Device administration | Network access (Wi-Fi, VPN, 802.1X) |
+| Separates the three As | Yes, so each command can be authorized | Authentication and authorization are combined |
+| Typical use | Administering network devices | Network access: Wi-Fi, VPN, 802.1X |
 
-Multi-factor authentication combines at least two of: something you know, something you have, something you are.
+## Making a device an AAA client
+
+```
+username admin secret Str0ngPass
+aaa new-model
+tacacs server CORP
+ address ipv4 10.0.99.20
+ key Sh4redKey
+aaa authentication login default group tacacs+ local
+```
+
+- `aaa new-model` switches the device to AAA. From then on the method list decides how logins are checked.
+- The method list is tried in order: here the TACACS+ servers first, then the **local** usernames if no server answers. Always end with `local`, and keep a local account, or a server outage locks you out.
+- A RADIUS server is defined the same way with `radius server NAME` and `group radius`.
 
 ## Passwords on IOS
 
@@ -615,14 +1041,104 @@ Multi-factor authentication combines at least two of: something you know, someth
 
 | Attack | What happens | Defence |
 | --- | --- | --- |
-| Rogue DHCP server | Hands out a bad gateway to become the on-path device | **DHCP snooping**: server messages are only accepted on trusted ports |
-| ARP spoofing | Lies about which MAC owns the gateway's IP | **Dynamic ARP Inspection**, which checks ARP against the snooping table |
-| MAC flooding | Fills the switch table so it floods everything | **Port security** |
-| Unknown device plugged in | Unauthorised access | Port security; shut down unused ports; 802.1X |
+| Rogue DHCP server | Hands out a bad gateway to sit in the path | DHCP snooping |
+| ARP spoofing | Claims the gateway's IP address with its own MAC | Dynamic ARP inspection |
+| MAC flooding | Fills the switch table so frames are flooded | Port security |
+| Unknown device plugged in | Unauthorised access | Port security, shutting unused ports, 802.1X |
+| Broadcast storm | A loop or faulty device floods the VLAN | Storm control |
+| Rogue IPv6 router | Announces itself as the IPv6 gateway | RA guard |
 
-## Firewalls and access lists
+## DHCP snooping and dynamic ARP inspection
+
+```
+ip dhcp snooping
+ip dhcp snooping vlan 10
+interface g0/1
+ ip dhcp snooping trust
+ip arp inspection vlan 10
+interface g0/1
+ ip arp inspection trust
+```
+
+- **DHCP snooping** sorts ports into trusted and untrusted. Server messages (offers and acknowledgements) are accepted only on **trusted** ports, the uplinks toward the real server. Every port is untrusted until you say otherwise. The switch also records which address was leased to which port in a **binding table**.
+- **Dynamic ARP inspection** checks ARP messages on untrusted ports against that binding table and drops the ones that do not match. It depends on DHCP snooping being enabled first.
+
+## Storm control {v2}
+
+Storm control measures broadcast, multicast or unknown unicast traffic arriving on a port and acts when it passes a threshold:
+
+```
+interface fa0/1
+ storm-control broadcast level 5.00
+ storm-control action shutdown
+```
+
+`level` is a percentage of the port's bandwidth. Above it the excess traffic is dropped; `action shutdown` err-disables the port instead, and `action trap` sends an SNMP trap. `show storm-control` shows the thresholds and current levels.
+
+## RA guard {v2}
+
+In IPv6, hosts learn their gateway from **router advertisements**. Any device that sends one can make itself the gateway for the VLAN. RA guard drops router advertisements arriving on ports where no router should be:
+
+```
+interface fa0/1
+ ipv6 nd raguard
+```
+
+It is the IPv6 counterpart of DHCP snooping: only the ports facing real routers are allowed to announce one.
+
+## Threats and people {v1}
+
+- A **vulnerability** is a weakness, an **exploit** is a way to use it, a **threat** is someone or something that might, and **mitigation** reduces the risk.
+- **Social engineering** attacks people: phishing (email), spear phishing (targeted), tailgating (following someone through a door).
+- A security programme combines user awareness, training and physical access control.
+- Multi-factor authentication needs at least two of: something you know, something you have, something you are.
+
+## Firewalls {v1}
 
 A router ACL filters packets by address and port and keeps no memory of connections. A **stateful firewall** tracks connections and allows return traffic automatically. An **IPS** inspects traffic for known attack patterns and can block it.
+
+> Common mistakes: a method list without `local` at the end; forgetting to trust the uplink for DHCP snooping, which blocks the real server; enabling dynamic ARP inspection without DHCP snooping.
+
+<!-- topic: l2security -->
+## Port security
+
+Port security limits which, and how many, MAC addresses may use an access port. It stops someone unplugging a PC and connecting their own device or a small switch.
+
+```
+interface fa0/1
+ switchport mode access
+ switchport port-security
+ switchport port-security maximum 1
+ switchport port-security violation restrict
+ switchport port-security mac-address sticky
+```
+
+- The port must be a **static access port** first; port security is refused on a dynamic port.
+- `switchport port-security` on its own turns the feature on. The other lines only set options; without the first line nothing is enforced.
+- **Sticky** learning takes the first address seen and writes it into the running configuration, so you do not type MAC addresses by hand.
+
+## Violation modes
+
+| Mode | Frames from an unknown device | Counter and log | Port |
+| --- | --- | --- | --- |
+| `protect` | Dropped | No | Stays up |
+| `restrict` | Dropped | Yes | Stays up |
+| `shutdown` (default) | Dropped | Yes | Goes **err-disabled** until someone runs `shutdown` then `no shutdown` |
+
+## Edge port protection
+
+- `spanning-tree portfast`: the port forwards immediately, so a PC gets its DHCP address without waiting 30 seconds.
+- `spanning-tree bpduguard enable`: if a BPDU arrives (meaning a switch was connected), the port is err-disabled.
+
+## Unused ports
+
+Shut them down, and ideally move them to an unused VLAN: `interface range fa0/3 - 8` then `shutdown`.
+
+## Check your work
+
+`show port-security` lists secured ports with their limits and violation counts. `show port-security interface fa0/1` gives the detail for one port, including the last address seen.
+
+> Common mistakes: setting the options but never the bare `switchport port-security` line; forgetting `switchport mode access`; leaving the default `shutdown` mode when the request was to keep the port up.
 
 <!-- topic: acl -->
 ## What an ACL is
@@ -716,6 +1232,53 @@ From a PC: `ssh -l admin 10.0.99.1` should ask for the password; `telnet 10.0.99
 
 > Common mistakes: generating keys before setting the domain name; `login` instead of `login local`; forgetting `transport input ssh`, which leaves Telnet open.
 
+<!-- topic: vpn -->
+## What a VPN is for
+
+A VPN carries private traffic across a network you do not trust, usually the Internet, as if the two ends were directly connected. It replaces expensive private circuits between sites and lets staff work from anywhere.
+
+## The two kinds
+
+| | Site-to-site | Remote access |
+| --- | --- | --- |
+| Connects | Two networks, router to router or firewall to firewall | One user's device to the company network |
+| Who knows about it | Only the gateways; hosts are unaware | The user runs VPN client software |
+| Always on | Usually | Started when needed |
+| Typical technology | IPsec, often with GRE inside it | TLS or IPsec with a client such as Cisco Secure Client |
+
+## What IPsec provides
+
+IPsec is a framework, not one protocol. It gives four protections:
+
+- **Confidentiality**: encryption, normally AES.
+- **Integrity**: a hash (SHA) proves the packet was not altered.
+- **Authentication**: each end proves who it is, with a pre-shared key or certificates.
+- **Anti-replay**: sequence numbers stop a captured packet being sent again.
+
+## The protocols inside it
+
+| Protocol | Job |
+| --- | --- |
+| **IKE** (UDP 500, or UDP 4500 through NAT) | Negotiates the tunnel and exchanges keys |
+| **ESP** (IP protocol 50) | Encrypts and authenticates the data. The one that is used |
+| **AH** (IP protocol 51) | Authenticates only, no encryption. Rare, and breaks through NAT |
+
+IKE runs first to build a secure channel and agree keys (a security association), then ESP carries the traffic.
+
+## Transport and tunnel mode
+
+- **Tunnel mode** encrypts the whole original packet and adds a new IP header. Used between gateways, so it is the mode for site-to-site VPNs.
+- **Transport mode** keeps the original IP header and protects only the payload. Used host to host, or to protect a GRE tunnel.
+
+IPsec alone carries only unicast IP. To send multicast, such as OSPF hellos, across a VPN, the traffic is first wrapped in **GRE** and the GRE tunnel is then protected by IPsec.
+
+## Remote access choices
+
+- **Full tunnel**: all of the user's traffic goes through the company. Safer, slower.
+- **Split tunnel**: only company traffic uses the VPN; the rest goes straight to the Internet.
+
+> The exam asks you to describe these, not configure them. Common mistakes: thinking AH encrypts; mixing up the modes (tunnel mode is the one with the new IP header); forgetting that IPsec by itself cannot carry routing protocol multicast.
+
 <!-- topic: automation -->
 ## Traditional and controller-based networks
 
@@ -762,6 +1325,74 @@ Status codes: **200** OK, **201** created, **400** bad request, **401** not auth
 
 The benefit is consistency: the same definition is applied to a hundred devices, changes are reviewed like code, and drift from the intended configuration can be detected.
 
+<!-- topic: netops -->
+## Ways to manage a network
+
+| Approach | How changes are made | Good for | Weakness |
+| --- | --- | --- | --- |
+| **Device-based** | Log in to each device and type, or use its web page | Small networks, emergencies | Slow, inconsistent, no record of intent |
+| **Controller-based** | A controller on your premises (such as Catalyst Center) holds the intent and configures the devices | Large campuses | The controller must be bought and run |
+| **Cloud-based** | A dashboard hosted by the vendor (such as Meraki) manages devices that call home | Many small sites, small teams | Depends on Internet access and a subscription |
+| **Automation-based** | Scripts and tools such as Ansible push changes to many devices | Repeatable changes on existing equipment | Someone must write and maintain the automation |
+| **Infrastructure as code** | The intended configuration lives in files in version control; a tool makes reality match | Review, history and rollback of every change | Needs discipline and tooling |
+
+These combine. A common pattern is infrastructure as code, with Ansible as the tool that applies it.
+
+## Ansible in five words
+
+- **Control node**: the machine Ansible runs on. Nothing is installed on the network devices: Ansible is **agentless** and connects with SSH.
+- **Inventory**: the list of devices, arranged in groups.
+- **Playbook**: a YAML file describing what should be true.
+- **Task**: one step in a playbook, which calls a **module**.
+- **Module**: the code that does the work, such as `ios_config` for configuration lines or `ios_command` for show commands.
+
+## An inventory
+
+```
+[access]
+SW1 ansible_host=10.0.99.11
+SW2 ansible_host=10.0.99.12
+```
+
+`[access]` is a group. A playbook can target a group, one host, or `all`.
+
+## A playbook
+
+```
+- name: Roll out the CCTV VLAN
+  hosts: access
+  tasks:
+    - name: Create VLAN 40
+      ios_config:
+        parents: vlan 40
+        lines:
+          - name CCTV
+```
+
+Read it top down: one **play** that runs on every host in the `access` group, with one task. `parents` is the mode to enter first, and `lines` are the commands to make sure are present there. Indentation is the structure: YAML has no brackets, so a line indented wrongly means something different.
+
+## Running it
+
+| Command | What it does |
+| --- | --- |
+| `ansible all -m ping` | Checks Ansible can log in to every host |
+| `ansible access -m ios_command -a "show vlan brief"` | Runs one show command on a group |
+| `ansible-playbook -i inventory.ini cctv.yml` | Runs a playbook |
+| `ansible-playbook cctv.yml --check` | Reports what would change, without changing it |
+
+## Reading the result
+
+Each host ends each task in one state:
+
+- **ok**: already as described; nothing was done.
+- **changed**: Ansible made a change.
+- **failed**: the device rejected something.
+- **unreachable**: Ansible could not log in.
+
+Running the same playbook twice should report `changed` the first time and `ok` the second. That property is **idempotence**, and it is what makes a playbook safe to run again.
+
+> One lab in this game lets you fix an inventory and a playbook and run them against simulated switches. Common mistakes: a host missing from the inventory, so it is silently skipped; a group name in `hosts:` that does not exist; bad indentation.
+
 <!-- topic: capstone -->
 ## A method for broken networks
 
@@ -778,6 +1409,22 @@ Guessing wastes time. Work in a fixed order so each check rules something out.
 | 3 Addressing | Right address, mask and gateway on the host? | `ipconfig /all`, `show ip dhcp binding` |
 | 3 Routing | Is there a route there, and a route back? | `show ip route`, `show ip ospf neighbor` |
 | 4 and up | Is something filtering or failing to translate? | `show access-lists`, `show ip nat translations` |
+
+## Three more tools
+
+**The log.** `show logging` lists recent messages held in memory. Look for interfaces going down, neighbours dropping and ports being err-disabled around the time the problem started.
+
+**Extended ping.** Typing `ping` alone on a router asks questions instead of pinging at once. The useful ones are the **source** address or interface (to test from the LAN side rather than the WAN side), the packet size, the repeat count and the don't-fragment bit. A ping that works from the router's WAN address but fails when sourced from its LAN interface means the far end has no route back to that LAN, or NAT is not translating it.
+
+**A packet capture.** Each line of a capture is one frame:
+
+```
+No. Source          Destination     Protocol Info
+1   192.168.1.10    10.0.0.10       TCP      51514 > 80 [SYN]
+2   192.168.1.10    10.0.0.10       TCP      51514 > 80 [SYN]  (retransmission)
+```
+
+Read it for who is talking, with which protocol and port, and whether there is an answer. A SYN repeated with no SYN-ACK means the request left and nothing came back: a filter, a missing return route, or nothing listening. A SYN answered by a reset (RST) means the host is reachable but the port is closed. ARP requests with no reply mean the target is not on that VLAN.
 
 ## Reading the symptoms
 

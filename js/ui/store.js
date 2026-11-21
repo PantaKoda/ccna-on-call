@@ -1,7 +1,10 @@
-// Player progress, kept in the browser's localStorage: story results, how many
-// random variants of each lab were solved, studied topics and exam history.
+// Player progress, kept in the browser's localStorage: which exam version is
+// being studied, story results, how many random variants of each lab were
+// solved, studied topics and exam history. Progress is shared between the two
+// exam versions; the version only decides what is shown.
 
 import { LEVELS, TIERS } from "../game/levels/index.js";
+import { EXAMS } from "../game/topics.js";
 
 const KEY = "ccna-on-call-v1";
 const XP_FACTOR = [0, 0.6, 0.8, 1];
@@ -22,15 +25,23 @@ const save = () => { try { localStorage.setItem(KEY, JSON.stringify(data)); } ca
 const unlockAll = new URLSearchParams(location.search).get("unlock") === "all";
 
 export const store = {
+  // ---------------------------------------------------------- exam version
+  examChosen: () => data.prefs.exam in EXAMS,
+  exam: () => (data.prefs.exam in EXAMS ? data.prefs.exam : "v1"),
+  setExam(id) { data.prefs.exam = id; save(); },
+  // the levels of the chosen exam, in career order
+  levels: () => LEVELS.filter(l => !l.only || l.only === store.exam()),
+
   // ---------------------------------------------------------- story
   result: id => data.levels[id] || null,
   isDone: id => !!data.levels[id],
   isUnlocked(id) {
     if (unlockAll) return true;
-    const i = LEVELS.findIndex(l => l.id === id);
-    return i <= 0 || store.isDone(LEVELS[i - 1].id);
+    const list = store.levels();
+    const i = list.findIndex(l => l.id === id);
+    return i === 0 || (i > 0 && store.isDone(list[i - 1].id));
   },
-  nextLevel: () => LEVELS.find(l => !store.isDone(l.id)) || null,
+  nextLevel: () => store.levels().find(l => !store.isDone(l.id)) || null,
   xpFor: (level, starCount) => Math.round(level.xp * XP_FACTOR[starCount]),
 
   // Records a finished level; keeps the best result. Returns the XP gained now.
@@ -48,21 +59,24 @@ export const store = {
   },
 
   totals() {
+    const list = store.levels();
     let ticketXp = 0, starCount = 0, done = 0, variantXp = 0, variants = 0;
-    for (const l of LEVELS) {
+    for (const l of list) {
       const r = data.levels[l.id];
       if (r) { ticketXp += r.xp; starCount += r.stars; done++; }
+      const v = data.variants[l.id];
+      if (v) { variantXp += v.xp; variants += v.n; }
     }
-    for (const v of Object.values(data.variants)) { variantXp += v.xp; variants += v.n; }
     // xp is everything earned; ticketXp out of maxXp is progress through the career path
-    return { xp: ticketXp + variantXp, ticketXp, variantXp, variants, stars: starCount, done, maxXp: LEVELS.reduce((a, l) => a + l.xp, 0), maxStars: LEVELS.length * 3, count: LEVELS.length };
+    return { xp: ticketXp + variantXp, ticketXp, variantXp, variants, stars: starCount, done, maxXp: list.reduce((a, l) => a + l.xp, 0), maxStars: list.length * 3, count: list.length };
   },
 
   // Rank follows the highest tier you have fully cleared.
   rank() {
+    const list = store.levels();
     let rank = TIERS[0].rank, tier = 1;
     for (const t of TIERS) {
-      const all = LEVELS.filter(l => l.tier === t.id).every(l => store.isDone(l.id));
+      const all = list.filter(l => l.tier === t.id).every(l => store.isDone(l.id));
       if (!all) { rank = t.rank; tier = t.id; break; }
       rank = "Network Architect"; tier = TIERS.length + 1;
     }

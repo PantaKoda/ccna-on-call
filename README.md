@@ -8,12 +8,14 @@ It is a static web app (plain HTML, CSS and ES modules, no build step, no backen
 
 ## What is in it
 
-- **Two ways to browse.** *Career path*: 25 levels in 5 tiers, each harder than the last (18 hands-on labs, 2 subnetting drills, 5 promotion exams). *Topics*: the same content grouped into 19 topics, each with a theory page, a quick check and its labs.
+- **Two exam versions.** The first screen asks which blueprint you are studying for: **200-301 v1.1** (six domains) or **v2.0** (five domains). The topics, theory, exams and labs are then arranged by that blueprint's domains and weights. In v1.1, anything v2.0 dropped is marked **v1 exclusive**; in v2.0, new material is marked **New in v2**. Progress is shared and you can switch at any time.
+- **Two ways to browse.** *Career path*: 5 tiers, each harder than the last, with 18 hands-on labs (19 in v2.0), 2 subnetting drills and 5 promotion exams. *Topics*: the same content grouped into 26 topics under the exam's domains, each with a theory page, a quick check and its labs.
 - **Theory first.** Every topic has a study page with the key ideas, the commands and the common mistakes. The same page opens in a side drawer during a lab.
-- **Random variants on demand.** After you solve a lab, a **New variant** button appears on it. Each press builds a new version of the same skill from a random seed: different addresses, VLAN numbers and names, and for troubleshooting a different fault. 16 of the 18 labs have variants (18 templates; some labs have a build version and a troubleshooting version). There is no schedule: you decide when and how often. Each solved variant earns the lab's XP again under the same star rules.
+- **Random variants on demand.** After you solve a lab, a **New variant** button appears on it. Each press builds a new version of the same skill from a random seed: different addresses, VLAN numbers and names, and for troubleshooting a different fault. 17 of the 19 labs have variants (19 templates; some labs have a build version and a troubleshooting version). There is no schedule: you decide when and how often. Each solved variant earns the lab's XP again under the same star rules.
 - **A network simulator** that runs in the browser: VLANs and trunks, router-on-a-stick, static and default routes, OSPF (adjacencies, costs, DR/BDR, passive interfaces, default origination), DHCP server and relay, NAT (PAT and static), standard and extended ACLs, SSH/Telnet access rules, port security.
 - **An IOS-style command line**: user/privileged/config modes, command abbreviation (`sh ip int br`), `?` help, Tab completion, `do`, `no` forms, `| include / exclude / begin / section`, console log messages (`%LINK-3-UPDOWN`, `%OSPF-5-ADJCHG`), and over thirty `show` commands.
 - **A PC command prompt**: `ipconfig`, `ping`, `tracert`, `ssh`, `telnet`, `curl`, plus an IP settings bar for static/DHCP addressing.
+- **A simulated Ansible control node** (v2.0): an inventory and a playbook you edit in the browser, `ansible` and `ansible-playbook` (with `--check`), and the `ios_config`, `ios_command` and `ping` modules, run against the simulated switches over simulated SSH. No containers or real Ansible involved.
 - **Scoring**: three stars per level (minus one per hint, minus one for going over par time), XP from tickets and from variants, and a rank that rises as you clear tiers. A solved lab is marked clearly on its screen and on its card.
 - **Exam questions by topic**, with the ones you missed coming back first. If you install your own question bank, every question is labelled **Book** or **Custom** and you can choose which to use.
 - **Handbook**: a searchable command reference plus every theory page, one click away during any ticket.
@@ -84,11 +86,12 @@ js/engine/                    the simulator (no DOM; also runs under Node)
   network.js                    devices, links, L2 domains, routing, OSPF, DHCP, NAT, ACLs, forwarding
   ios.js                        IOS-style command line: modes, parser, show commands, running-config
   host.js                       PC command prompt
+  ansible.js                    simulated Ansible: inventory, playbook (YAML subset), modules
 js/game/
   lab.js                        builds a lab from a level definition, evaluates objectives
   checks.js                     objective checks (ping works, VLAN exists, config saved ...)
   levels/tier1.js ... tier5.js  the story tickets
-  topics.js                     topics, which ticket teaches what, question-to-topic matching
+  topics.js                     the two exam blueprints, topics and where each sits in them, question-to-topic matching
   practice.js                   variant templates: generators that build a random version of a lab from a seed
   questions.js                  exam question bank
   handbook.js                   command reference shown in the Handbook
@@ -150,6 +153,20 @@ A template in `js/game/practice.js` is a generator: `gen(x)` receives a seeded r
 
 `content/theory.md` holds one page per topic, separated by `<!-- topic: id -->` lines. Pages are plain Markdown (headings, tables, lists, code blocks, block quotes). A new topic also needs an entry in `TOPICS` and `TOPIC_ORDER` in `js/game/topics.js`.
 
+## The two exam versions
+
+`js/game/topics.js` holds both blueprints (`EXAMS`). Content is shared and tagged, never duplicated:
+
+| What | How it is tagged | Effect |
+| --- | --- | --- |
+| Topic | `v1` and `v2` give its domain in each exam; `null` means that exam does not have it | A topic with `v2: null` is shown only in v1.1, marked "v1 exclusive" |
+| Theory section | `{v1}` or `{v2}` at the end of a `##` heading | Shown only in that exam, with a badge |
+| Exam question | a seventh item `"v1"` or `"v2"`, or the `V1_ONLY` list | Drawn only in that exam |
+| Lab | `only: "v2"` (or `"v1"`) | Part of that exam's career path only |
+| Promotion exam | `params.domains` (v1.1) and `params.v2domains` (v2.0) | Draws questions by the chosen exam's domains |
+
+Untagged content belongs to both. The AI topics of v2.0 (agentic AI, choosing prompts) are not covered yet.
+
 ## Releases
 
 Changes are listed in [CHANGELOG.md](CHANGELOG.md), and every version is a git tag and a GitHub release. The version of a running copy is shown at the bottom of the career screen.
@@ -162,4 +179,4 @@ The script expects the changes to be committed and described under `## [Unreleas
 
 ## Known limits of the simulator
 
-It models what the CCNA labs need, not all of IOS. Not simulated yet: IPv6, spanning-tree topology changes (loops are not detected), EtherChannel bundling (the commands are accepted and saved), HSRP, wireless, and `debug`. Unknown commands are rejected the way IOS rejects them rather than silently accepted.
+It models what the CCNA labs need, not all of IOS. Several v2.0 topics are theory and questions only for that reason: IPv6 and OSPFv3, wireless, virtualization, VPNs, HSRP and VRRP, AAA servers, DHCP snooping, storm control and RA guard. Not simulated yet: IPv6, spanning-tree topology changes (loops are not detected), EtherChannel bundling (the commands are accepted and saved), HSRP, wireless, and `debug`. Unknown commands are rejected the way IOS rejects them rather than silently accepted.

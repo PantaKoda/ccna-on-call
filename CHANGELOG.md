@@ -4,6 +4,21 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- A choice of exam on the first screen: CCNA 200-301 **v1.1** (six domains) or **v2.0** (five domains). Topics, theory, promotion exams and the career path follow the blueprint you pick, grouped by its domains with their exam weights. Switch at any time with the Exam button in the top bar; progress is shared.
+- "v1 exclusive" marks. In v1.1, the topic, theory sections and questions that v2.0 dropped carry a badge (the whole Automation and programmability topic; NTP, QoS, FTP/TFTP, network designs, VRF, wireless controller details, BPDU Filter, and the threats and firewalls sections). In v2.0 they are hidden.
+- "New in v2" marks for material only v2.0 asks for: OSPFv3, storm control, RA guard, secure file transfer with SCP/SFTP, and the network operations topic.
+- A lab on Ansible (v2.0): fix an inventory and a playbook on a control PC with a built-in file editor, then run `ansible` and `ansible-playbook` against three remote switches that have no console. Includes `--check`, ad-hoc show commands, and a variant template with four kinds of fault.
+- Seven new theory pages: IPv6 (types, EUI-64, prefix sizes, static routes), virtualization, client troubleshooting on Windows, macOS and Linux, wireless (bands, RF behaviour, interference, security), IPsec and VPNs, syslog and SNMP, and network operations with Ansible.
+- New theory sections on existing pages: cables and interface errors, Rapid PVST+ roles with root, loop and BPDU guard, EtherChannel configuration, ports for phones and access points with PoE, HSRP and VRRP status, host routes, OSPF point-to-point links, a router as DHCP client, DNS record types and diagnosis, AAA client configuration, DHCP snooping and ARP inspection configuration, and reading logs, extended ping and packet captures.
+- 57 more custom exam questions covering the new material, so every topic in both exams has at least four.
+
+### Changed
+
+- The Topics screen is grouped by the chosen exam's domains instead of the game's own tracks.
+- Ansible reports "changed" when a VLAN is created, not only when the running configuration changes.
+
 ## [0.5.0] - 2026-11-21
 
 ### Added

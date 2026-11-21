@@ -90,5 +90,14 @@ export const C = {
   userSecret: (dev, user) => net => { const u = net.devs[dev].users[user]; return !!u && u.kind === "secret"; },
   sshV2: dev => net => net.devs[dev].sshVersion === 2,
 
+  // --- Ansible
+  // the inventory on the control node lists every one of these addresses
+  inventoryHas: (pc, addrs) => net => { const text = (net.devs[pc].files || {})["inventory.ini"] || ""; return addrs.every(a => new RegExp("ansible_host=" + a.replace(/\./g, "\\.") + "(\\s|$)", "m").test(text.replace(/[#;].*$/gm, ""))); },
+  // the last real (not --check) playbook run reached all these hosts with no failure
+  ansibleClean: hosts => net => {
+    const last = net.ansibleLast;
+    return !!last && hosts.every(h => last.results[h] && last.results[h].failed === 0 && last.results[h].unreachable === 0 && last.results[h].ok > 0);
+  },
+
   all: (...fns) => (net, lab) => fns.every(f => f(net, lab)),
 };

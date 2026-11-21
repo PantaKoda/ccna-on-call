@@ -151,7 +151,8 @@ export default [
     from: "Kestrel Freight CTO Office",
     subject: "Final review: all six exam domains",
     brief: ["The last gate. Fifteen questions across all six CCNA domains, including automation and programmability. Pass and you make Network Architect."],
-    params: { domains: [1, 2, 3, 4, 5, 6], count: 15, pass: 75 },
+    params: { domains: [1, 2, 3, 4, 5, 6], v2domains: [1, 2, 3, 4, 5], count: 15, pass: 75 },
+    v2: { subject: "Final review: all five exam domains", brief: ["The last gate. Fifteen questions across all five domains of the v2.0 blueprint, including network operations and management. Pass and you make Network Architect."] },
     skills: ["All six CCNA domains"],
   },
 ];

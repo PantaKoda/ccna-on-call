@@ -3,6 +3,26 @@
 import { ipToInt, intToIp } from "./ip.js";
 import { fakeMac } from "./network.js";
 import { IosSession, remoteAccess, checkLogin, traceHops } from "./ios.js";
+import { runAdhoc, runPlaybook } from "./ansible.js";
+
+const FILE_HELP = [
+  "",
+  "This PC is an Ansible control node:",
+  "dir                                   List the files on this PC",
+  "type <file>                           Show a file (edit files with the Files bar above)",
+  "ansible <hosts> -m ping               Check Ansible can log in to the hosts",
+  'ansible <hosts> -m ios_command -a "show vlan brief"',
+  "ansible-playbook <playbook> [--check] Run a playbook (--check only reports what would change)",
+].join("\n");
+
+// split a command line into arguments, keeping "quoted text" together
+function splitArgs(text) {
+  const out = [];
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let m;
+  while ((m = re.exec(text))) out.push(m[1] ?? m[2] ?? m[3]);
+  return out;
+}
 
 const HELP = [
   "ipconfig [/all | /renew | /release]   Show or refresh this PC's IP settings",
@@ -15,6 +35,7 @@ const HELP = [
   "",
   "Set a static address or switch to DHCP with the IP settings bar above this window.",
 ].join("\n");
+
 
 // Apply IP settings to a host. Strings or integers are accepted.
 export function setHostIp(net, devName, cfg) {
@@ -64,7 +85,7 @@ export class HostSession {
     if (!text) return "";
     this.history.push(text);
     this.count++;
-    const [cmd, ...args] = text.split(/\s+/);
+    const [cmd, ...args] = splitArgs(text);
     const fn = COMMANDS[cmd.toLowerCase()];
     if (!fn) return `'${cmd}' is not recognized as an internal or external command,\noperable program or batch file.`;
     return fn(this, args) || "";
@@ -80,9 +101,54 @@ function failIp(net, r) {
   return i && i.ip != null ? intToIp(i.ip) : null;
 }
 
+function inventoryOf(s, args) {
+  const i = args.indexOf("-i");
+  const name = i >= 0 ? args[i + 1] : "inventory.ini";
+  const text = s.dev.files && s.dev.files[name];
+  return text == null ? { error: `ERROR! Unable to find the inventory file "${name}". Type "dir" to list the files here.` } : { text, name };
+}
+const NO_ANSIBLE = name => `'${name}' is not recognized as an internal or external command,\noperable program or batch file.`;
+
 const COMMANDS = {
-  help: () => HELP,
-  "?": () => HELP,
+  help: s => HELP + (s.dev.files ? FILE_HELP : ""),
+  "?": s => HELP + (s.dev.files ? FILE_HELP : ""),
+
+  dir(s) {
+    if (!s.dev.files) return " Directory of C:\\Users\\user\n\n               0 File(s)";
+    const names = Object.keys(s.dev.files);
+    return [" Directory of C:\\ansible", "", ...names.map(n => `${String(s.dev.files[n].length).padStart(8)} ${n}`), `${String(names.length).padStart(8)} File(s)`].join("\n");
+  },
+  ls(s) { return COMMANDS.dir(s); },
+  type(s, args) {
+    if (!args[0]) return "The syntax of the command is incorrect. Usage: type <file>";
+    const text = s.dev.files && s.dev.files[args[0]];
+    return text == null ? "The system cannot find the file specified." : text.replace(/\n+$/, "");
+  },
+  cat(s, args) { return COMMANDS.type(s, args); },
+
+  ansible(s, args) {
+    if (!s.dev.files) return NO_ANSIBLE("ansible");
+    const inv = inventoryOf(s, args);
+    if (inv.error) return inv.error;
+    const flags = new Set(["-i", "-m", "-a"]);
+    const pattern = args.find((a, i) => !a.startsWith("-") && !flags.has(args[i - 1]));
+    const m = args.indexOf("-m"), a = args.indexOf("-a");
+    if (!pattern) return 'Usage: ansible <hosts> -m ping        (hosts is "all", a group or a host from the inventory)';
+    return runAdhoc(s.net, s.dev.name, inv.text, pattern, m >= 0 ? args[m + 1] : "ping", a >= 0 ? args[a + 1] : "");
+  },
+
+  "ansible-playbook"(s, args) {
+    if (!s.dev.files) return NO_ANSIBLE("ansible-playbook");
+    const inv = inventoryOf(s, args);
+    if (inv.error) return inv.error;
+    const file = args.find((a, i) => !a.startsWith("-") && args[i - 1] !== "-i");
+    if (!file) return "Usage: ansible-playbook <playbook.yml> [--check]";
+    const text = s.dev.files[file];
+    if (text == null) return `ERROR! the playbook: ${file} could not be found`;
+    const run = runPlaybook(s.net, s.dev.name, inv.text, text, { check: args.includes("--check") || args.includes("-C") });
+    if (run.results && !run.check) s.net.ansibleLast = { playbook: file, results: run.results };
+    return run.text;
+  },
   cls: () => "\f",
   clear: () => "\f",
 

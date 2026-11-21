@@ -174,7 +174,7 @@ export default [
     from: "Dana Okafor, NOC Team Lead",
     subject: "End of orientation: fundamentals check",
     brief: ["Orientation week is over. Pass this fundamentals check and you move from intern to junior engineer, with access to the access-layer tickets."],
-    params: { domains: [1], count: 8, pass: 70 },
+    params: { domains: [1], v2domains: [1], count: 8, pass: 70 },
     skills: ["Network fundamentals"],
   },
 ];

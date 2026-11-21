@@ -191,7 +191,8 @@ export default [
     from: "Dana Okafor, NOC Team Lead",
     subject: "Promotion check: IP connectivity",
     brief: ["You've kept three depots routed through a bad week. Pass the IP connectivity check to take on services and security work as a senior engineer."],
-    params: { domains: [3], count: 10, pass: 70 },
+    params: { domains: [3], v2domains: [3], count: 10, pass: 70 },
+    v2: { subject: "Promotion check: IP routing", brief: ["You've kept three depots routed through a bad week. Pass the IP routing check to take on services and security work as a senior engineer."] },
     skills: ["IP connectivity"],
   },
 ];

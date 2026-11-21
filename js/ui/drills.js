@@ -4,7 +4,7 @@
 import { h, rich, fmtTime } from "./dom.js";
 import { ipToInt, intToIp, lenMask, netOf, bcastOf } from "../engine/ip.js";
 import { QUESTIONS } from "../game/questions.js";
-import { topicOfQuestion, TOPIC_BY_ID } from "../game/topics.js";
+import { topicOfQuestion, TOPIC_BY_ID, inExam, questionOnly } from "../game/topics.js";
 import { store } from "./store.js";
 
 const rnd = n => Math.floor(Math.random() * n);
@@ -116,17 +116,19 @@ export function loadBank() {
   return bankPromise;
 }
 
-// The player's choice of sources ("all", "book" or "custom"); only matters
-// when a book bank is installed.
+// The questions in play: those that belong to the exam version being studied,
+// from the sources the player chose ("all", "book" or "custom"; the choice only
+// matters when a book bank is installed).
 export function activeQuestions(bank) {
+  const exam = store.exam();
   const want = bank.hasBook ? store.pref("sources", "all") : "all";
-  return want === "all" ? bank.all : bank.all.filter(q => q.src === want);
+  return bank.all.filter(q => inExam(q, q.topic, exam) && (want === "all" || q.src === want));
 }
 
-// { topicId: { custom: n, book: n } } for the Topics screen
+// { topicId: { custom: n, book: n } } for the Topics screen, for the chosen exam
 export function countByTopic(bank) {
-  const out = {};
-  for (const q of bank.all) { const c = (out[q.topic] ||= { custom: 0, book: 0 }); c[q.src]++; }
+  const out = {}, exam = store.exam();
+  for (const q of bank.all) { if (!inExam(q, q.topic, exam)) continue; const c = (out[q.topic] ||= { custom: 0, book: 0 }); c[q.src]++; }
   return out;
 }
 
@@ -156,7 +158,11 @@ function balanced(list, count, order) {
 }
 
 export function mountQuiz(root, level, { onDone }) {
-  const { domains, topic, count, pass } = level.params;
+  const { domains, v2domains, topic, count, pass } = level.params;
+  const exam = store.exam();
+  // a promotion exam draws by the domains of the exam version being studied
+  const want = exam === "v2" ? v2domains : domains;
+  const domainOf = q => (exam === "v2" ? TOPIC_BY_ID.get(q.topic).v2 : q.ch);
   const start = Date.now();
   const progress = h("span", { class: "stat" });
   const card = h("div", { class: "drill-card" }, h("p", { class: "muted" }, "Loading the question bank..."));
@@ -173,8 +179,8 @@ export function mountQuiz(root, level, { onDone }) {
       qs = balanced(pool.filter(q => q.topic === topic), count, byNeed);
     } else {
       // spread the questions evenly over the requested domains
-      const per = Math.ceil(count / domains.length);
-      for (const d of domains) qs.push(...balanced(pool.filter(q => q.ch === d), per, shuffle));
+      const per = Math.ceil(count / want.length);
+      for (const d of want) qs.push(...balanced(pool.filter(q => domainOf(q) === d), per, shuffle));
       qs = shuffle(qs).slice(0, count);
       if (qs.length < Math.min(count, 4)) qs = shuffle(pool).slice(0, count);   // a very small bank: use whatever it has
     }
@@ -218,7 +224,9 @@ export function mountQuiz(root, level, { onDone }) {
     card.replaceChildren(h("div", { class: "question" },
       h("div", { class: "q-meta" },
         showSource ? h("span", { class: "src-badge " + q.src, title: SOURCES[q.src].title }, SOURCES[q.src].label) : null,
-        t ? h("span", { class: "muted small" }, t.name) : null),
+        t ? h("span", { class: "muted small" }, t.name) : null,
+        questionOnly(q, q.topic) === "v1" ? h("span", { class: "vbadge v1x", title: "In the v1.1 blueprint, not in v2.0" }, "v1 exclusive") : null,
+        questionOnly(q, q.topic) === "v2" ? h("span", { class: "vbadge v2n", title: "New in the v2.0 blueprint" }, "New in v2") : null),
       h("div", { class: "qhtml", html: q.q }), h("div", { class: "options" }, opts), explain, h("div", { class: "actions" }, btn)));
     card.scrollIntoView({ block: "nearest" });
   }

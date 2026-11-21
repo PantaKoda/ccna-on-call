@@ -102,7 +102,7 @@ const DEFAULT_PORTS = {
 export function makeDevice(spec) {
   const d = {
     name: spec.name, kind: spec.kind, hostname: spec.hostname || spec.name,
-    x: spec.x ?? 50, y: spec.y ?? 50, note: spec.note || "", locked: !!spec.locked,
+    x: spec.x ?? 50, y: spec.y ?? 50, note: spec.note || "", locked: !!spec.locked, lockMsg: spec.lockMsg || "",
     ifaces: {}, ifOrder: [],
   };
   if (isHost(d)) {
@@ -110,6 +110,7 @@ export function makeDevice(spec) {
     d.ifOrder = ["eth0"];
     d.ipcfg = { mode: "static", ip: null, mask: null, gw: null, dns: null, ...(spec.ip || {}) };
     d.services = spec.services || [];
+    d.files = spec.files ? { ...spec.files } : null;      // text files on a PC (inventory, playbooks)
     return d;
   }
   Object.assign(d, {

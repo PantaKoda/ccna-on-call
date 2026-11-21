@@ -413,3 +413,28 @@ a.side-link:hover { border-color: var(--accent); }
 .solved-mark { color: var(--green); font-weight: 700; font-family: var(--sans); }
 .variant-line { display: block; margin-top: 2px; font-family: var(--sans); }
 .variant-line.on { color: var(--green); font-weight: 600; }
+
+/* ---------- exam versions ---------- */
+.vbadge { display: inline-block; vertical-align: middle; margin-left: .6em; font: 700 10px var(--sans); letter-spacing: .07em; text-transform: uppercase; border-radius: 99px; padding: .2em .7em; white-space: nowrap; }
+.vbadge.v1x { color: var(--amber); background: color-mix(in srgb, var(--amber) 14%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 55%, transparent); }
+.vbadge.v2n { color: var(--blue); background: color-mix(in srgb, var(--blue) 14%, transparent); border: 1px solid color-mix(in srgb, var(--blue) 55%, transparent); }
+.card-top .vbadge { margin-left: 0; }
+.hb-section.tagged { border-left: 3px solid var(--line-2); padding-left: 12px; }
+.exam-chip b { color: var(--accent); margin-left: .2em; }
+.weight { margin-left: 1em; color: var(--muted); font-weight: 500; letter-spacing: 0; text-transform: none; font-size: 12.5px; }
+.chooser-wrap { max-width: 1000px; margin: 0 auto; padding: 34px 16px 60px; }
+.chooser-wrap h1 { font-size: clamp(26px, 4vw, 36px); margin-bottom: .3em; }
+.exam-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 22px; }
+.exam-card { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; padding: 20px 22px; }
+.exam-card.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.exam-card h2 { font-size: 22px; margin-bottom: 8px; }
+.exam-card .details td { text-align: right; width: 4.5em; }
+.exam-card .details th { white-space: normal; font-weight: 500; color: var(--text); }
+.exam-notes { padding-left: 18px; margin: 12px 0 16px; font-size: 13.5px; color: var(--muted); flex: 1; }
+.exam-notes li { margin: 4px 0; }
+
+/* ---------- files and the editor (Ansible lab) ---------- */
+.filebar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 10px; background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: 12.5px; flex: none; }
+.filebar .btn { font-family: var(--mono); }
+.modal.wide { width: min(760px, 100%); }
+.editor { display: block; width: 100%; min-height: 300px; height: 46vh; resize: vertical; margin-top: 8px; padding: 12px; font: 13.5px/1.5 var(--mono); tab-size: 2; white-space: pre; overflow: auto; color: var(--term); background: var(--term-bg); border: 1px solid var(--line-2); border-radius: 8px; }

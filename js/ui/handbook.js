@@ -4,7 +4,13 @@
 
 import { h, esc } from "./dom.js";
 import { HANDBOOK } from "../game/handbook.js";
-import { TOPIC_BY_ID, TOPIC_ORDER, splitTheory } from "../game/topics.js";
+import { TOPIC_BY_ID, TOPIC_ORDER, splitTheory, theoryFor } from "../game/topics.js";
+import { store } from "./store.js";
+
+const SECTION_BADGE = { v1: ["vbadge v1x", "v1 exclusive", "In the v1.1 blueprint, not in v2.0"], v2: ["vbadge v2n", "New in v2", "New in the v2.0 blueprint"] };
+
+// one topic's theory page for the exam version being studied
+export const theoryPage = (pages, id) => theoryFor(pages[id] || "", store.exam());
 
 // ---- content loaders
 let notesPromise = null;
@@ -47,7 +53,10 @@ export function renderMarkdown(md) {
     if (!line.trim()) continue;
     if (line.startsWith("# ")) continue;
     if (line.startsWith("## ")) {
-      section = h("section", { class: "hb-section" }, h("h3", {}, line.slice(3)));
+      const tag = /\s*\{(v1|v2)\}\s*$/.exec(line);
+      const title = line.slice(3).replace(/\s*\{(v1|v2)\}\s*$/, "");
+      const b = tag && SECTION_BADGE[tag[1]];
+      section = h("section", { class: "hb-section" + (tag ? " tagged" : "") }, h("h3", {}, title, b ? h("span", { class: b[0], title: b[2] }, b[1]) : null));
       root.append(section);
     } else if (line.startsWith("### ")) {
       into().append(h("h4", {}, line.slice(4)));
@@ -107,7 +116,7 @@ export function openHandbook(topic) {
   const search = h("input", { class: "hb-search", type: "search", placeholder: "Search this page, e.g. trunk allowed", "aria-label": "Search the handbook" });
   const pages = h("select", { class: "hb-pages", "aria-label": "Handbook page" },
     h("option", { value: "" }, "Command reference"),
-    h("optgroup", { label: "Theory" }, TOPIC_ORDER.map(id => h("option", { value: id }, TOPIC_BY_ID.get(id).name))));
+    h("optgroup", { label: "Theory" }, TOPIC_ORDER.filter(id => TOPIC_BY_ID.get(id)[store.exam()] !== null).map(id => h("option", { value: id }, TOPIC_BY_ID.get(id).name))));
   pages.value = topic && TOPIC_BY_ID.has(topic) ? topic : "";
   drawer = h("aside", { class: "handbook", role: "dialog", "aria-label": "Handbook" },
     h("header", { class: "hb-head" }, h("strong", {}, "Handbook"), pages, count,
@@ -120,7 +129,7 @@ export function openHandbook(topic) {
   const show = () => {
     const id = pages.value;
     const wanted = id;
-    (id ? loadTheory().then(t => t[id] || "") : loadNotes().then(n => n.map(x => x.md).join("\n"))).then(md => {
+    (id ? loadTheory().then(t => theoryPage(t, id)) : loadNotes().then(n => n.map(x => x.md).join("\n"))).then(md => {
       if (!drawer || pages.value !== wanted) return;
       doc = renderMarkdown(md || "Nothing here yet.");
       body.replaceChildren(doc);
