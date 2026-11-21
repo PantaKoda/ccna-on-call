@@ -487,6 +487,16 @@ interface range fa0/1 - 2
  spanning-tree bpduguard enable
 ```
 
+## Finding a switch that should not be there
+
+If `show spanning-tree` names a root bridge you do not recognise, somebody has plugged a switch in. Trace it one hop at a time:
+
+1. On any switch, `show spanning-tree vlan 10`. Under **Root ID**, the `Port` line is the interface that leads towards the root.
+2. Go to the switch at the other end of that port (`show cdp neighbors` names it) and ask again.
+3. When the root port is an access port, you have arrived: the unknown switch is plugged into it.
+
+If root guard is already on the distribution switches, they never accept the false root. They hold their ports towards it instead, so start from `show spanning-tree inconsistentports` and follow the port it names. Cut the switch off at the access port with BPDU guard; root guard then releases its ports without any command.
+
 ## BPDU Filter {v1}
 
 BPDU Filter stops a port sending or processing BPDUs. It hides spanning tree from the attached device and can create a loop if used carelessly, so BPDU Guard is the safer choice on access ports.

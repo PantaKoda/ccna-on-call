@@ -1,5 +1,5 @@
 import { C } from "../checks.js";
-import { stpLab, channelLab } from "../practice.js";
+import { stpLab, rogueLab, channelLab } from "../practice.js";
 
 const M24 = "255.255.255.0";
 const pc = (name, x, y, ip, gw) => ({ name, kind: "pc", x, y, ip: { mode: "static", ip, mask: M24, gw } });
@@ -163,6 +163,15 @@ export default [
     skills: ["spanning-tree mode rapid-pvst", "root primary and secondary", "bridge priority", "root guard", "show spanning-tree"],
     ...stpLab({ site: "TOWER", vlans: [{ id: 10, name: "SALES" }, { id: 20, name: "ENG" }], roots: { 10: "DSW1", 20: "DSW1" }, left: 4096, exact: null, guard: true }),
     debrief: "Spanning tree never broke anything here, which is why nobody noticed: with the wrong root the network still works, on a worse path. The root bridge decides which links forward, so it is chosen on purpose, with a backup, and root guard keeps the choice from being overruled by whatever gets plugged in below.",
+  },
+
+  {
+    id: "rogue-switch", tier: 2, type: "lab", xp: 240, par: 540,
+    title: "The Switch Under the Table",
+    from: "Marcus Lindqvist, Security",
+    skills: ["tracing the root port", "show spanning-tree inconsistentports", "BPDU guard", "err-disabled ports", "show cdp neighbors"],
+    ...rogueLab({ site: "TOWER", vlans: [{ id: 10, name: "SALES" }, { id: 20, name: "ENG" }], root: "DSW1", port: 5, rv: 0, prio: 0, guarded: true }),
+    debrief: "Two protections did two different jobs. Root guard kept the false root away from the distribution switches, at the price of cutting off the access switch below it. BPDU guard stopped the switch at the port it was plugged into, which is where it should have been stopped in the first place. An err-disabled port stays down: once someone has unplugged the switch, bounce the port with `shutdown` and `no shutdown`.",
   },
 
   {

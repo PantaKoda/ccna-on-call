@@ -4,6 +4,12 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- New lab "The Switch Under the Table" (tier 2), a sequel to "Root of the Problem": an unknown switch is plugged into an access port and claims the spanning tree root, and root guard has cut the access switch off to contain it. Trace it with `show spanning-tree inconsistentports`, the root port and `show cdp neighbors`, then stop it at its port with PortFast and BPDU guard.
+- A variant template for it with two forms: root guard already in place (an outage for one VLAN), or no root guard yet, where the tree has quietly re-rooted and you add root guard as well. The port, the VLAN and the priority the switch announces change each time.
+- Theory: a short section on tracing a switch that should not be there. Two new questions on the same subject.
+
 ## [0.8.0] - 2026-11-21
 
 ### Added

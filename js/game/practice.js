@@ -336,6 +336,62 @@ export function stpGuardLab({ site, vlans, root, fault }) {
   };
 }
 
+// The same triangle with a switch nobody knows plugged into an access port of
+// ASW1. It claims the root for one VLAN.
+//   port    - the Fa0/x port of ASW1 it is plugged into
+//   rv      - which of the two VLANs that port is in (0 or 1)
+//   prio    - the priority the unknown switch announces
+//   guarded - root guard is already on the distribution switches, so they have
+//             cut ASW1 off in that VLAN; otherwise the tree has re-rooted and
+//             the player adds root guard as well
+export function rogueLab({ site, vlans, root, port, rv, prio, guarded }) {
+  const [a, b] = vlans, ids = [a.id, b.id], vl = ids.join(","), v = vlans[rv], sec = otherDsw(root), Site = cap(site.toLowerCase());
+  const edge = Array.from({ length: 8 }, (_, i) => `fa0/${i + 1}`), srv = `192.168.${v.id}.5`;
+  const dsw = d => ["spanning-tree mode rapid-pvst", `spanning-tree vlan ${vl} priority ${d === root ? 24576 : 28672}`, ...(guarded ? ["interface g0/2", "spanning-tree guard root", "exit"] : [])];
+  const topology = stpTriangle(site, vlans, { DSW1: dsw("DSW1"), DSW2: dsw("DSW2"),
+    ASW1: ["spanning-tree mode rapid-pvst", `interface fa0/${port}`, "switchport mode access", `switchport access vlan ${v.id}`, "exit"] });
+  topology.devices.push(
+    { name: "SW-X", kind: "switch", hostname: "Switch", x: 770, y: 395, locked: true, note: "Not in the inventory",
+      lockMsg: "It is under a table in a meeting room and nobody on site can get to it. Deal with it from the port it is plugged into.",
+      config: [`vlan ${v.id}`, "exit", "interface range fa0/1 - 2", "switchport mode access", `switchport access vlan ${v.id}`, "exit", `spanning-tree vlan ${v.id} priority ${prio}`] },
+    pc("LAPTOP", 890, 480, `192.168.${v.id}.77`, M24));
+  topology.links.push(`ASW1:fa0/${port} SW-X:fa0/1`, "SW-X:fa0/2 LAPTOP");
+  const secure = [...cfg("interface range fa0/1 - 8", "spanning-tree portfast", "spanning-tree bpduguard enable"), "show interfaces status", "write memory"];
+  return {
+    subject: guarded ? `${Site}: ${v.name} users on the access switch lost the network` : `${Site}: the spanning tree root is a switch nobody recognises`,
+    brief: guarded
+      ? [`At 09:12 this morning the ${v.name} users on ASW1 at the ${Site} site lost the network. ${vlans[1 - rv].name} is fine. Root guard is on the distribution switches, and both report an inconsistent port towards ASW1: something below them is claiming to be the root bridge for VLAN ${v.id}.`,
+        `Root guard has contained it by cutting the access switch off in that VLAN, which is also why those users are down. Find what is claiming the root and cut it off at its port. Then give ASW1 the edge protection it never got: **PortFast and BPDU guard** on every access port. Root guard releases its ports by itself once the false root goes quiet.`,
+        "You cannot log in to the unknown switch, and nobody is on site to unplug it."]
+      : [`Monitoring logged a spanning tree change at the ${Site} site at 09:12 this morning, and the tree has not gone back. \`show spanning-tree vlan ${v.id}\` on ${root} now names a root bridge with priority ${prio + v.id} and an address that is not in the inventory. ${root} was the root yesterday.`,
+        "Somebody has plugged a switch into the network. Follow the root port from switch to switch until you reach it, cut it off at its port, and then close the hole: **PortFast and BPDU guard** on every access port of ASW1, and **root guard** on the distribution ports that face it.",
+        "You cannot log in to the unknown switch, and nobody is on site to unplug it."],
+    details: [["Root bridge", `${root} for VLAN ${listOf(ids)}, backup ${sec}`], ["Edge protection", "PortFast and BPDU guard on Fa0/1 to Fa0/8 of ASW1"],
+      ["Root guard", guarded ? "already on G0/2 of DSW1 and of DSW2: leave it there" : "G0/2 of DSW1 and G0/2 of DSW2 (they face ASW1)"], ["Unknown switch", "no console access, nobody on site"],
+      ["Useful", "show spanning-tree vlan <id> · show spanning-tree inconsistentports · show cdp neighbors · show interfaces status"]],
+    topology,
+    objectives: [
+      { text: `All three switches agree again that ${root} is the root bridge for VLAN ${listOf(ids)}`, check: C.all(...ids.map(id => C.stpRootIs(TRI, id, root))) },
+      { text: "The unknown switch is cut off at ASW1 (its port is err-disabled or shut down), and the laptop behind it reaches nothing", check: C.all(C.cutOff("ASW1", `fa0/${port}`), C.noPing("LAPTOP", srv)) },
+      { text: "PortFast and BPDU guard are on all eight access ports of ASW1 (Fa0/1 to Fa0/8) and on no uplink", check: C.edgeOnly("ASW1", edge) },
+      { text: "Root guard is on G0/2 of DSW1 and of DSW2, and no port is root-inconsistent", check: C.all(C.rootGuardOnly({ DSW1: ["g0/2"], DSW2: ["g0/2"], ASW1: [] }), C.stpConsistent(TRI)) },
+      { text: "PC-A reaches SRV-A, and PC-B reaches SRV-B", check: stpPings(vlans) },
+      { text: "Save every switch you changed", check: C.savedIfChanged(TRI) },
+    ],
+    hints: [guarded
+      ? `\`show spanning-tree inconsistentports\` on a distribution switch names the port that hears the false root, and that port leads to ASW1. On ASW1, \`show spanning-tree vlan ${v.id}\` shows the Root ID and the \`Port\` that leads to it: an access port. \`show cdp neighbors\` tells you what is on the other end.`
+      : `\`show spanning-tree vlan ${v.id}\` on ${root}: the Root ID block is no longer this switch, and its \`Port\` line says which interface leads towards the root. Go to the switch at the other end of that port and ask again. The trail ends at an access port; \`show cdp neighbors\` tells you what is plugged into it.`,
+      "BPDU guard is the tool for an access port: `interface range fa0/1 - 8`, `spanning-tree portfast`, `spanning-tree bpduguard enable`. The moment it is on, a port with a switch behind it goes err-disabled, and `show interfaces status` shows which one.",
+      guarded
+        ? "Nothing needs changing on the distribution switches. Run `show spanning-tree inconsistentports` there again: the list is empty, because root guard recovers by itself. Save ASW1."
+        : `Then root guard: \`interface g0/2\`, \`spanning-tree guard root\` on DSW1 and on DSW2. If you add it while the unknown switch is still connected, those ports turn root-inconsistent and ASW1 loses VLAN ${v.id} until you cut the switch off. That is root guard doing its job.`],
+    solution: guarded
+      ? [{ on: root, cmds: ["enable", "show spanning-tree inconsistentports"] }, { on: "ASW1", cmds: ["enable", `show spanning-tree vlan ${v.id}`, "show cdp neighbors", ...secure.slice(1)] }]
+      : [{ on: root, cmds: ["enable", `show spanning-tree vlan ${v.id}`] }, { on: "ASW1", cmds: ["enable", `show spanning-tree vlan ${v.id}`, "show cdp neighbors", ...secure.slice(1)] },
+        ...["DSW1", "DSW2"].map(d => ({ on: d, cmds: [...cfg("interface g0/2", "spanning-tree guard root"), "write memory"] }))],
+  };
+}
+
 // ---------------------------------------------------------------- EtherChannel
 // Two switches joined by two or three parallel cables. `fault` is null for the
 // build version (separate trunks, so spanning tree blocks all but one), or
@@ -1084,6 +1140,13 @@ const SKILLS = [
     },
   },
 
+  {
+    id: "rogue-root", topic: "switching", name: "Cut off a switch that claims the root", par: 540,
+    gen(x) {
+      return rogueLab({ site: x.pick(SITES), vlans: pickVlans(x), root: x.pick(["DSW1", "DSW2"]), port: x.int(3, 8), rv: x.int(0, 1), prio: x.pick([0, 4096, 8192]), guarded: x.bool() });
+    },
+  },
+
   // ---------- EtherChannel
   {
     id: "channel-build", topic: "switching", name: "Bundle parallel links into an EtherChannel", par: 600,
@@ -1111,7 +1174,7 @@ const SKILLS = [
 // Which story lab each template is a variant of. A lab can have more than one
 // (for example a build version and a troubleshooting version).
 const AFTER = {
-  "stp-root": "root-bridge", "stp-guards": "root-bridge", "channel-build": "port-channel", "channel-fault": "port-channel",
+  "stp-root": "root-bridge", "stp-guards": "root-bridge", "rogue-root": "rogue-switch", "channel-build": "port-channel", "channel-fault": "port-channel",
   "ansible-vlan": "ansible-rollout", "static-floating": "floating-backup", "relay-build": "dhcp-relay", "relay-fault": "dhcp-relay",
   "cli-name": "first-console", "cli-setup": "lock-it-down", "addr-lan": "desk-move", "addr-fault": "desk-move", "addr-svi": "switch-mgmt",
   "vlan-access": "vlans-101", "vlan-trunk": "trunk-line", "vlan-fault": "trunk-line", roas: "router-on-a-stick", "port-sec": "port-security",

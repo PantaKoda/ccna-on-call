@@ -106,7 +106,7 @@ export const LEVEL_TOPIC = {
   "vlans-101": "vlans", "trunk-line": "vlans",
   "router-on-a-stick": "intervlan",
   "port-security": "l2security",
-  "root-bridge": "switching", "port-channel": "switching",
+  "root-bridge": "switching", "rogue-switch": "switching", "port-channel": "switching",
   "static-routes": "static", "default-route": "static", "floating-backup": "static",
   "ospf-single-area": "ospf", "ospf-broken": "ospf",
   "dhcp-pools": "dhcp", "dhcp-relay": "dhcp", "nat-edge": "nat", "acl-guard": "acl", "ssh-hardening": "access",

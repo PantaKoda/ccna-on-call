@@ -81,6 +81,12 @@ export const C = {
   // no port is err-disabled, and none is held by root guard
   stpClean: devs => net => devs.every(dev => net.devs[dev].ifOrder.every(n => !net.devs[dev].ifaces[n].errdisabled)
     && Object.values(net.st.stp[dev] || {}).every(t => Object.values(t.ports).every(p => p.state !== "BKN"))),
+  // every listed switch sees this switch as the root of the VLAN
+  stpRootIs: (devs, vlan, rootDev) => net => devs.every(d => { const t = net.st.stp[d] && net.st.stp[d][vlan]; return !!t && t.root.dev === rootDev; }),
+  // no port is held by root guard
+  stpConsistent: devs => net => devs.every(dev => Object.values(net.st.stp[dev] || {}).every(t => Object.values(t.ports).every(p => p.state !== "BKN"))),
+  // the port carries nothing: BPDU guard disabled it, or it was shut down by hand
+  cutOff: (dev, n) => net => { const i = iface(net, dev, n); return !!i.errdisabled || i.shutdown; },
   // at least one of the devices was changed, and every changed one is saved
   savedIfChanged: devs => (net, lab) => {
     const changed = devs.filter(d => lab.initial[d] !== runningConfig(net.devs[d]));
