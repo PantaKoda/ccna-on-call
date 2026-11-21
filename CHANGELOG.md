@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-21
+
 ### Added
 
 - Topics view. The home screen now switches between the career path and a view grouped by topic. Each of the 19 topics has a theory page, a quick check, its tickets and its practice labs side by side.
