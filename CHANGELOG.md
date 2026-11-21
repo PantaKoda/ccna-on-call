@@ -4,6 +4,22 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- Topics view. The home screen now switches between the career path and a view grouped by topic. Each of the 19 topics has a theory page, a quick check, its tickets and its practice labs side by side.
+- Theory pages for every topic: key ideas, commands, how to check your work and common mistakes. A "Theory" button in each lab opens the page in a side drawer without leaving the lab, and the Handbook lists all of them.
+- Practice labs that change every time. 17 skills are generated from a random seed with different addresses, VLAN numbers, names and, for the troubleshooting ones, a different fault. Two subnetting practice sets work the same way.
+- Spaced review. Closing a ticket queues the skills it taught; each comes back as a fresh variant after 15 minutes, then 1, 3, 7, 16 and 35 days. The home screen shows what is due and each skill shows a mastery level.
+- Quick checks: up to six exam questions on one topic. Questions you got wrong come back first, then ones you have not seen.
+- Source labels for exam questions. With an imported bank installed, every question shows a "Book" or "Custom" badge, the Topics screen counts both per topic, and a selector chooses book only, custom only or both (about half of each).
+- 36 more custom exam questions, so every topic has at least four.
+- After a failed or imperfect exam, the result lists the topics worth revisiting, linked to their theory pages.
+
+### Changed
+
+- A PC whose default gateway is outside its own subnet can no longer reach other networks, as on a real PC.
+- The top bar link back from an activity now reads "Home".
+
 ## [0.2.0] - 2026-11-21
 
 ### Added

@@ -1,6 +1,6 @@
 # CCNA: On Call
 
-A network engineering game for people studying for the CCNA 200-301 exam. Instead of only answering multiple-choice questions, you play the on-call network engineer at a fictional company: tickets come in, you open a console on a simulated router, switch or PC, and fix the network with IOS-style commands. Objectives tick off live as the simulated network starts working.
+A network engineering game for people studying for the CCNA 200-301 exam. You study a topic, then play the on-call network engineer at a fictional company: tickets come in, you open a console on a simulated router, switch or PC, and fix the network with IOS-style commands. Objectives tick off live as the simulated network starts working. Skills you have learned come back later as fresh variants, so they stick.
 
 It is a static web app (plain HTML, CSS and ES modules, no build step, no backend). Progress is saved in the browser's localStorage.
 
@@ -8,12 +8,16 @@ It is a static web app (plain HTML, CSS and ES modules, no build step, no backen
 
 ## What is in it
 
-- **25 levels in 5 tiers**, each harder than the last: 18 hands-on labs, 2 subnetting drills and 5 promotion exams.
+- **Two ways to browse.** *Career path*: 25 levels in 5 tiers, each harder than the last (18 hands-on labs, 2 subnetting drills, 5 promotion exams). *Topics*: the same content grouped into 19 topics, each with a theory page, a quick check, its tickets and its practice labs.
+- **Theory first.** Every topic has a study page with the key ideas, the commands and the common mistakes. The same page opens in a side drawer during a lab.
+- **Repetition that changes.** 17 practice labs are generated from a random seed, so each run has different addresses, VLAN numbers and names, and the troubleshooting ones hide a different fault. Two subnetting practice sets work the same way.
+- **Spaced review.** Closing a ticket puts its skills in a review queue. Each comes back as a new variant after 15 minutes, then 1, 3, 7, 16 and 35 days. Solving it with little help moves it up; needing the solution brings it back sooner.
 - **A network simulator** that runs in the browser: VLANs and trunks, router-on-a-stick, static and default routes, OSPF (adjacencies, costs, DR/BDR, passive interfaces, default origination), DHCP server and relay, NAT (PAT and static), standard and extended ACLs, SSH/Telnet access rules, port security.
 - **An IOS-style command line**: user/privileged/config modes, command abbreviation (`sh ip int br`), `?` help, Tab completion, `do`, `no` forms, `| include / exclude / begin / section`, console log messages (`%LINK-3-UPDOWN`, `%OSPF-5-ADJCHG`), and over thirty `show` commands.
 - **A PC command prompt**: `ipconfig`, `ping`, `tracert`, `ssh`, `telnet`, `curl`, plus an IP settings bar for static/DHCP addressing.
 - **Scoring**: three stars per level (minus one per hint, minus one for going over par time), XP, and a rank that rises as you clear tiers.
-- **Handbook**: a searchable command reference, one click away during any ticket.
+- **Exam questions by topic**, with the ones you missed coming back first. If you install your own question bank, every question is labelled **Book** or **Custom** and you can choose which to use.
+- **Handbook**: a searchable command reference plus every theory page, one click away during any ticket.
 - **Coaching**: when a command is rejected only because you are in the wrong mode, a tip says which mode it belongs in.
 - **Light and dark mode**, following your system setting until you pick one.
 
@@ -42,7 +46,7 @@ npm test                      # plays every lab's scripted solution in the simul
 node tests/run-levels.mjs ospf-broken -v    # one level, with the full console transcript
 ```
 
-Each lab ships with a solution script. The test builds the lab, checks the objectives are not already met, types the solution into the simulated consoles and checks every objective is met at the end. It also checks that the question bank is well formed and large enough for every exam. The Docker build runs the same test and fails if a level can no longer be completed.
+Each lab ships with a solution script. The test builds the lab, checks the objectives are not already met, types the solution into the simulated consoles and checks every objective is met at the end. It runs every practice generator over 40 random seeds the same way, and checks that the question bank is well formed, that every topic has a theory page, and that every ticket and skill belongs to a topic. The Docker build runs the same test and fails if a level can no longer be completed.
 
 ## Docker
 
@@ -66,9 +70,11 @@ Alternatively, push the built image to a registry and deploy it in Coolify as a 
 
 ## Content and your own material
 
-Everything in this repository was written for the project: the simulator, the levels, the exam questions (`js/game/questions.js`) and the handbook (`js/game/handbook.js`).
+Everything in this repository was written for the project: the simulator, the levels, the practice generators, the theory pages (`content/theory.md`), the exam questions (`js/game/questions.js`) and the handbook (`js/game/handbook.js`).
 
 You can swap in your own question bank or handbook by placing `questions.js` or `notes.js` in `data/`. Those two files are ignored by git on purpose, so content you only hold a personal licence for (questions from a book you bought, for instance) cannot be committed by accident. See [data/README.md](data/README.md) for the formats.
+
+When an imported bank is present the game keeps the two sources apart: each exam question carries a **Book** or **Custom** badge, the Topics screen shows how many of each a topic has, and a selector on the home screen switches between both, book only and custom only. With both selected, a quiz draws about half from each. Imported questions are sorted into topics by their wording.
 
 ## Project layout
 
@@ -82,15 +88,18 @@ js/engine/                    the simulator (no DOM; also runs under Node)
 js/game/
   lab.js                        builds a lab from a level definition, evaluates objectives
   checks.js                     objective checks (ping works, VLAN exists, config saved ...)
-  levels/tier1.js ... tier5.js  the levels
+  levels/tier1.js ... tier5.js  the story tickets
+  topics.js                     topics, which ticket teaches what, question-to-topic matching
+  practice.js                   practice skills: generators that build a lab variant from a seed
   questions.js                  exam question bank
   handbook.js                   command reference shown in the Handbook
-js/ui/                        screens: career map, lab workspace, terminal, network map, drills, handbook
+js/ui/                        screens: home (career path and topics), study page, lab workspace, terminal, network map, drills, handbook
+content/theory.md             the theory pages, one section per topic
 data/                         optional personal data packs (git-ignored)
 tools/serve.mjs               dev server
 tools/release.mjs             cuts a release (version, changelog, tag, push)
 tools/import-data.mjs         builds data packs from the companion practice app
-tests/run-levels.mjs          level and question bank tests
+tests/run-levels.mjs          level, practice generator, topic and question bank tests
 Dockerfile, nginx.conf        production image
 CHANGELOG.md                  what changed in each version
 ```
@@ -130,7 +139,17 @@ Add an object to one of the `js/game/levels/tierN.js` files. A lab looks like th
 
 Drills use `type: "subnet"` with `params: { count, minLen, maxLen }`, and exams use `type: "quiz"` with `params: { domains, count, pass }`.
 
-Exam questions are added to `js/game/questions.js` as `[question, [options], indexOfAnswer, explanation]` under the right domain.
+Exam questions are added to `js/game/questions.js`: either under an exam domain as `[question, [options], indexOfAnswer, explanation]`, or in the `BY_TOPIC` list with an explicit topic.
+
+## Adding a practice skill
+
+A skill in `js/game/practice.js` is a generator: `gen(x)` receives a seeded random helper (`x.int`, `x.pick`, `x.sample`, `x.bool`) and returns the same fields as a lab (`subject`, `brief`, `details`, `topology`, `objectives`, `hints`, `solution`), built from the random values. Add the ticket that teaches it to the `AFTER` map: the skill opens for practice when that ticket is reachable and joins the review queue when it is closed.
+
+`npm test` builds every skill with 40 seeds and plays the generated solution each time, so a variant that cannot be completed is caught before release. `PRACTICE_SEEDS=500 npm test` runs more.
+
+## Adding or editing theory
+
+`content/theory.md` holds one page per topic, separated by `<!-- topic: id -->` lines. Pages are plain Markdown (headings, tables, lists, code blocks, block quotes). A new topic also needs an entry in `TOPICS` and `TOPIC_ORDER` in `js/game/topics.js`.
 
 ## Releases
 

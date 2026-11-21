@@ -1,14 +1,17 @@
-// Non-lab level types: the subnetting worksheet and the multiple-choice exams.
+// Non-lab activities: the subnetting worksheet and multiple-choice questions
+// (promotion exams and per-topic quick checks).
 
 import { h, rich, fmtTime } from "./dom.js";
 import { ipToInt, intToIp, lenMask, netOf, bcastOf } from "../engine/ip.js";
 import { QUESTIONS } from "../game/questions.js";
+import { topicOfQuestion, TOPIC_BY_ID } from "../game/topics.js";
+import { store } from "./store.js";
 
 const rnd = n => Math.floor(Math.random() * n);
 
 function header(level, right) {
   return h("header", { class: "drill-head" },
-    h("div", {}, h("span", { class: "tag" }, `Tier ${level.tier}`), h("span", { class: "muted small" }, ` From: ${level.from}`), h("h2", {}, level.subject),
+    h("div", {}, h("span", { class: "tag" }, level.tier ? `Tier ${level.tier}` : "Practice"), h("span", { class: "muted small" }, ` From: ${level.from}`), h("h2", {}, level.subject),
       level.brief.map(p => h("p", { class: "muted", html: rich(p) }))),
     right);
 }
@@ -90,21 +93,41 @@ export function mountSubnet(root, level, { onDone }) {
   return { dirty: () => asked > 0 && n < total, destroy() { clearInterval(timer); } };
 }
 
-// ------------------------------------------------------------ exam (multiple choice)
-// The exams use the built-in bank (js/game/questions.js). If you installed
-// your own bank as data/questions.js (see data/README.md) it is used instead.
+// ------------------------------------------------------------ question bank
+// Two sources, always kept apart:
+//   "custom" - written for this game (js/game/questions.js)
+//   "book"   - your own imported bank, if data/questions.js is installed
+export const SOURCES = { custom: { label: "Custom", title: "Written for On Call" }, book: { label: "Book", title: "From your imported question bank" } };
+
 let bankPromise = null;
-function loadBank() {
-  const builtIn = { questions: QUESTIONS };
-  const pick = () => (window.CCNA_QUESTIONS && window.CCNA_QUESTIONS.questions.length ? window.CCNA_QUESTIONS : builtIn);
+export function loadBank() {
   bankPromise ||= new Promise(resolve => {
+    const build = imported => {
+      const tag = (list, src) => list.map(q => ({ ...q, src, topic: topicOfQuestion(q) }));
+      const book = imported && Array.isArray(imported.questions) ? tag(imported.questions, "book") : [];
+      resolve({ all: [...tag(QUESTIONS, "custom"), ...book], hasBook: book.length > 0 });
+    };
     const sc = document.createElement("script");
     sc.src = "data/questions.js";
-    sc.onload = () => resolve(pick());
-    sc.onerror = () => resolve(builtIn);
+    sc.onload = () => build(window.CCNA_QUESTIONS);
+    sc.onerror = () => build(null);
     document.head.append(sc);
   });
   return bankPromise;
+}
+
+// The player's choice of sources ("all", "book" or "custom"); only matters
+// when a book bank is installed.
+export function activeQuestions(bank) {
+  const want = bank.hasBook ? store.pref("sources", "all") : "all";
+  return want === "all" ? bank.all : bank.all.filter(q => q.src === want);
+}
+
+// { topicId: { custom: n, book: n } } for the Topics screen
+export function countByTopic(bank) {
+  const out = {};
+  for (const q of bank.all) { const c = (out[q.topic] ||= { custom: 0, book: 0 }); c[q.src]++; }
+  return out;
 }
 
 function shuffle(a) {
@@ -113,27 +136,56 @@ function shuffle(a) {
   return a;
 }
 
+// Questions you got wrong last time come first, then ones you have never seen,
+// then the rest: missed questions resurface until you get them right.
+function byNeed(list) {
+  const missed = [], unseen = [], known = [];
+  for (const q of shuffle(list)) (store.qstat(q.id) === 0 ? missed : store.qstat(q.id) === undefined ? unseen : known).push(q);
+  return [...missed, ...unseen, ...known];
+}
+
+// With both sources in play, draw about half from each, so a large imported
+// bank does not crowd the custom questions out. `order` sorts each source.
+function balanced(list, count, order) {
+  const book = order(list.filter(q => q.src === "book")), custom = order(list.filter(q => q.src === "custom"));
+  if (!book.length || !custom.length) return order(list).slice(0, count);
+  const half = Math.ceil(count / 2);
+  const picked = [...book.slice(0, half), ...custom.slice(0, count - Math.min(half, book.length))];
+  const rest = [...book.slice(half), ...custom.slice(count - Math.min(half, book.length))];
+  return [...picked, ...rest].slice(0, count);
+}
+
 export function mountQuiz(root, level, { onDone }) {
-  const { domains, count, pass } = level.params;
+  const { domains, topic, count, pass } = level.params;
   const start = Date.now();
   const progress = h("span", { class: "stat" });
   const card = h("div", { class: "drill-card" }, h("p", { class: "muted" }, "Loading the question bank..."));
   root.replaceChildren(h("div", { class: "drill" }, header(level, progress), card));
-  let i = 0, right = 0, qs = [], dead = false;
+  let i = 0, right = 0, qs = [], dead = false, showSource = false;
+  const missedTopics = new Set();
+  const status = () => `Question ${i + 1} of ${qs.length} · ${right} correct${pass ? ` · pass mark ${pass}%` : ""}`;
 
   loadBank().then(bank => {
     if (dead) return;
-    // spread the questions evenly over the requested domains
-    const per = Math.ceil(count / domains.length);
-    for (const d of domains) qs.push(...shuffle(bank.questions.filter(q => q.ch === d)).slice(0, per));
-    if (qs.length < count) qs = shuffle(bank.questions);   // a small custom bank: use whatever it has
-    qs = shuffle(qs).slice(0, count);
+    const pool = activeQuestions(bank);
+    showSource = bank.hasBook;
+    if (topic) {
+      qs = balanced(pool.filter(q => q.topic === topic), count, byNeed);
+    } else {
+      // spread the questions evenly over the requested domains
+      const per = Math.ceil(count / domains.length);
+      for (const d of domains) qs.push(...balanced(pool.filter(q => q.ch === d), per, shuffle));
+      qs = shuffle(qs).slice(0, count);
+      if (qs.length < Math.min(count, 4)) qs = shuffle(pool).slice(0, count);   // a very small bank: use whatever it has
+    }
+    if (!qs.length) { card.replaceChildren(h("p", {}, "There are no questions for this selection."), h("p", { class: "muted" }, "Try a different source setting on the Topics screen.")); return; }
+    qs = shuffle(qs);
     show();
   });
 
   function show() {
     const q = qs[i];
-    progress.textContent = `Question ${i + 1} of ${qs.length} · ${right} correct · pass mark ${pass}%`;
+    progress.textContent = status();
     const order = shuffle(q.o.map((_, k) => k));
     let picked = null, checked = false;
     const opts = order.map((k, pos) => h("button", { class: "option", type: "button", "aria-pressed": "false" },
@@ -151,24 +203,36 @@ export function mountQuiz(root, level, { onDone }) {
         checked = true;
         const correctPos = order.indexOf(q.a);
         const ok = picked === correctPos;
-        if (ok) right++;
+        if (ok) right++; else missedTopics.add(q.topic);
+        store.questionResult(q.id, ok);
         opts[correctPos].classList.add("correct");
         if (!ok) opts[picked].classList.add("wrong");
         opts.forEach(o => { o.disabled = true; });
         explain.hidden = false;
         explain.replaceChildren(h("strong", { class: ok ? "ok-text" : "bad-text" }, ok ? "Correct. " : `Not quite. The answer is ${"ABCDEF"[correctPos]}. `), h("span", { html: q.e }));
         btn.textContent = i + 1 >= qs.length ? "Finish" : "Next question";
-        progress.textContent = `Question ${i + 1} of ${qs.length} · ${right} correct · pass mark ${pass}%`;
+        progress.textContent = status();
       } else { i++; if (i >= qs.length) finish(); else show(); }
     });
-    card.replaceChildren(h("div", { class: "question" }, h("div", { class: "qhtml", html: q.q }), h("div", { class: "options" }, opts), explain, h("div", { class: "actions" }, btn)));
+    const t = TOPIC_BY_ID.get(q.topic);
+    card.replaceChildren(h("div", { class: "question" },
+      h("div", { class: "q-meta" },
+        showSource ? h("span", { class: "src-badge " + q.src, title: SOURCES[q.src].title }, SOURCES[q.src].label) : null,
+        t ? h("span", { class: "muted small" }, t.name) : null),
+      h("div", { class: "qhtml", html: q.q }), h("div", { class: "options" }, opts), explain, h("div", { class: "actions" }, btn)));
     card.scrollIntoView({ block: "nearest" });
   }
 
   function finish() {
     const pct = Math.round((right / qs.length) * 100);
+    const seconds = Math.round((Date.now() - start) / 1000);
+    const review = [...missedTopics];
+    if (!pass) {
+      onDone({ check: true, stars: 0, seconds, pct, review, detail: [`${right} of ${qs.length} correct (${pct}%)`] });
+      return;
+    }
     const starCount = pct < pass ? 0 : pct >= 95 ? 3 : pct >= 85 ? 2 : 1;
-    onDone({ stars: starCount, seconds: Math.round((Date.now() - start) / 1000), detail: [`${right} of ${qs.length} correct (${pct}%)`, `pass mark ${pass}%`], failText: `You scored ${pct}% and need ${pass}%. The questions are drawn at random, so the next attempt will be different.` });
+    onDone({ stars: starCount, seconds, review, detail: [`${right} of ${qs.length} correct (${pct}%)`, `pass mark ${pass}%`], failText: `You scored ${pct}% and need ${pass}%. The questions are drawn at random, so the next attempt will be different.` });
   }
 
   return { dirty: () => i > 0 && i < qs.length, destroy() { dead = true; } };

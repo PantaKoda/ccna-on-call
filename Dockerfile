@@ -9,6 +9,7 @@ FROM node:22-alpine AS test
 WORKDIR /app
 COPY package.json ./
 COPY js ./js
+COPY content ./content
 COPY tests ./tests
 RUN node tests/run-levels.mjs
 
@@ -18,6 +19,7 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY index.html /usr/share/nginx/html/
 COPY css /usr/share/nginx/html/css
 COPY data /usr/share/nginx/html/data
+COPY content /usr/share/nginx/html/content
 # copying from the test stage makes the build depend on the tests passing
 COPY --from=test /app/js /usr/share/nginx/html/js
 EXPOSE 80

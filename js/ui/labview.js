@@ -6,9 +6,12 @@ import { isHost } from "../engine/network.js";
 import { ipToInt, intToIp, maskLen } from "../engine/ip.js";
 import { Terminal } from "./terminal.js";
 import { Topology } from "./topology.js";
+import { openHandbook } from "./handbook.js";
+import { LEVEL_TOPIC, TOPIC_BY_ID } from "../game/topics.js";
 
 export function mountLab(root, level, { onDone }) {
   let lab = new Lab(level);
+  const topic = TOPIC_BY_ID.get(level.topic || LEVEL_TOPIC[level.id]);
   let hints = 0, solutionShown = false, start = Date.now(), finished = false;
   let terms = new Map(), active = null, lastDone = lab.progress().map(o => o.done);
 
@@ -18,8 +21,9 @@ export function mountLab(root, level, { onDone }) {
   const hintBtn = h("button", { class: "btn small", onclick: askHint });
   const closeBtn = h("button", { class: "btn primary block", hidden: true, onclick: finish }, "Close ticket");
   const ticket = h("div", { class: "win-body ticket" },
-    h("div", { class: "ticket-meta" }, h("span", { class: "tag" }, `Tier ${level.tier}`), h("span", { class: "muted small" }, `From: ${level.from}`)),
+    h("div", { class: "ticket-meta" }, h("span", { class: "tag" + (level.practice ? " practice" : "") }, level.practice ? "Practice" : `Tier ${level.tier}`), h("span", { class: "muted small" }, `From: ${level.from}`)),
     h("h2", {}, level.subject),
+    topic && h("button", { class: "btn small theory-link", onclick: () => openHandbook(topic.id), title: "Open the theory page for this topic without leaving the lab" }, `Theory: ${topic.name}`),
     level.brief.map(p => h("p", { html: rich(p) })),
     level.details && h("table", { class: "details" }, h("tbody", {}, level.details.map(([k, v]) => h("tr", {}, h("th", { scope: "row" }, k), h("td", {}, v))))),
     h("h3", {}, "Objectives"), objList, closeBtn,
@@ -207,7 +211,7 @@ export function mountLab(root, level, { onDone }) {
     const seconds = Math.round((Date.now() - start) / 1000);
     let starCount = 3 - hints - (seconds > level.par ? 1 : 0);
     if (solutionShown) starCount = 1;
-    onDone({ stars: Math.max(1, starCount), seconds, detail: [`${lab.commands} commands`, `${hints} hint${hints === 1 ? "" : "s"}`, seconds > level.par ? "over par time" : "within par time"] });
+    onDone({ stars: Math.max(1, starCount), seconds, hints, solutionShown, detail: [`${lab.commands} commands`, `${hints} hint${hints === 1 ? "" : "s"}`, seconds > level.par ? "over par time" : "within par time"] });
   }
 
   refresh();

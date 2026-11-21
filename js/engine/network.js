@@ -491,7 +491,8 @@ function compute(net) {
       const c = pcs[dn];
       if (c.ip == null) return null;
       if (((ip ^ c.ip) & c.mask) === 0) return { iface: "eth0", nh: ip };
-      return c.gw != null ? { iface: "eth0", nh: c.gw } : null;
+      // a gateway outside the host's own subnet cannot be reached, as on a real PC
+      return c.gw != null && ((c.gw ^ c.ip) & c.mask) === 0 ? { iface: "eth0", nh: c.gw } : null;
     }
     if (d.kind === "switch") {
       for (const i of l3[dn]) if (((ip ^ i.ip) & i.mask) === 0) return { iface: i.name, nh: ip };

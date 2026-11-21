@@ -5,7 +5,7 @@ A static web game (plain HTML, CSS, ES modules; no build step, no backend) that 
 ## Commands
 
 - `node tools/serve.mjs` runs the dev server on http://localhost:8080 (`?unlock=all` opens every level).
-- `npm test` plays every lab's scripted solution and checks the question bank. Run it after any change to `js/engine/` or `js/game/`.
+- `npm test` plays every lab's scripted solution, runs every practice generator over 40 seeds, and checks topics, theory and the question bank. Run it after any change to `js/engine/`, `js/game/` or `content/`.
 - `docker build -t ccna-on-call .` builds the production image; the build runs the tests.
 
 ## Release cycle
@@ -25,9 +25,16 @@ Several changes asked for in one request go out as one release. Never edit `js/v
 ## This repository is public
 
 - Never commit `data/questions.js` or `data/notes.js`. They are the owner's personal data packs (the question bank comes from a commercial book) and are git-ignored; the release script refuses to run if they are tracked. Do not copy their content into tracked files either.
-- New exam questions, handbook text and level text must be written from scratch, not adapted from a book or another site.
+- New exam questions, theory pages, handbook text and level text must be written from scratch, not adapted from a book or another site.
+- Keep the two question sources apart in the UI: built-in questions are "Custom", an imported bank is "Book". Never merge them without the label.
 - No secrets, tokens, personal names, email addresses or local file paths in tracked files. Passwords in levels are made-up lab values.
 - Before pushing anything unusual (a new top-level file, generated data, an image), check what is staged with `git status` and `git diff --cached --stat`.
+
+## How the content fits together
+
+- A **topic** (`js/game/topics.js`) has a theory page (`content/theory.md`), story tickets (`LEVEL_TOPIC`), practice skills and exam questions.
+- A **practice skill** (`js/game/practice.js`) is a seeded generator; its `AFTER` entry names the story ticket that teaches it. Closing that ticket queues the skill for spaced review (intervals in `js/ui/store.js`).
+- The owner studies theory first and learns by repetition: when adding a topic, add the theory page, at least four custom questions and at least one practice generator, not only a story ticket.
 
 ## Conventions
 

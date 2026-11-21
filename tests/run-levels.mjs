@@ -44,6 +44,68 @@ for (const level of LEVELS) {
   if (only && process.argv.includes("-v") && !problems.length) console.log(transcript.join("\n"));
 }
 
+// Practice generators: every skill, over many random seeds, must build, start
+// with something left to do, and be completed by its own solution.
+if (!only || only === "practice") {
+  const { SKILLS, makePractice } = await import("../js/game/practice.js");
+  const SEEDS = Number(process.env.PRACTICE_SEEDS || 40);
+  for (const skill of SKILLS) {
+    if (skill.kind === "subnet") continue;
+    const problems = [];
+    const subjects = new Set();
+    for (let seed = 1; seed <= SEEDS && problems.length < 4; seed++) {
+      let lab, level;
+      try { level = makePractice(skill.id, seed * 7919); lab = new Lab(level); }
+      catch (e) { problems.push(`seed ${seed}: ${e.message.split("\n").slice(0, 3).join(" | ")}`); continue; }
+      subjects.add(JSON.stringify(level.details));
+      if (lab.progress().every(o => o.done)) problems.push(`seed ${seed}: nothing to do at the start`);
+      for (const step of level.solution) {
+        if (step.pc) { lab.setHostIp(step.pc, step.ip); continue; }
+        for (const c of step.cmds) {
+          const out = lab.exec(step.on, c);
+          if (/% (Invalid|Incomplete|Ambiguous|Unknown)/.test(out)) problems.push(`seed ${seed}: "${c}" rejected on ${step.on}`);
+        }
+      }
+      for (const o of lab.progress()) if (!o.done) problems.push(`seed ${seed}: objective not met: ${o.text}`);
+    }
+    if (problems.length) {
+      failed++;
+      console.log(`FAIL practice ${skill.id}`);
+      for (const p of problems) console.log("   - " + p);
+    } else console.log(`ok   practice ${skill.id}  (${SEEDS} seeds, ${subjects.size} distinct variants)`);
+  }
+}
+
+// Topics: every topic has a theory page, every ticket and skill belongs to one,
+// and every topic has something to check yourself with.
+if (!only) {
+  const fs = await import("node:fs");
+  const { TOPICS, TOPIC_ORDER, TOPIC_BY_ID, LEVEL_TOPIC, splitTheory, topicOfQuestion } = await import("../js/game/topics.js");
+  const { SKILLS } = await import("../js/game/practice.js");
+  const { QUESTIONS } = await import("../js/game/questions.js");
+  const pages = splitTheory(fs.readFileSync(new URL("../content/theory.md", import.meta.url), "utf8"));
+  const problems = [];
+  for (const t of TOPICS) {
+    if (!pages[t.id] || pages[t.id].length < 400) problems.push(`topic ${t.id}: theory page missing or too short`);
+    if (!TOPIC_ORDER.includes(t.id)) problems.push(`topic ${t.id}: not in TOPIC_ORDER`);
+  }
+  for (const id of Object.keys(pages)) if (!TOPIC_BY_ID.has(id)) problems.push(`theory page "${id}" has no topic`);
+  for (const l of LEVELS) if (l.type !== "quiz" && !TOPIC_BY_ID.has(LEVEL_TOPIC[l.id])) problems.push(`level ${l.id}: no topic`);
+  for (const s of SKILLS) {
+    if (!TOPIC_BY_ID.has(s.topic)) problems.push(`skill ${s.id}: unknown topic ${s.topic}`);
+    const teacher = LEVELS.find(l => l.id === s.after);
+    if (!teacher) problems.push(`skill ${s.id}: "after" does not name a ticket`);
+    else if (LEVEL_TOPIC[teacher.id] !== s.topic) problems.push(`skill ${s.id}: its ticket ${teacher.id} is in another topic`);
+  }
+  const perTopic = {};
+  for (const q of QUESTIONS) { const t = topicOfQuestion(q); perTopic[t] = (perTopic[t] || 0) + 1; }
+  if (problems.length) {
+    failed++;
+    console.log("FAIL topics");
+    for (const p of problems) console.log("   - " + p);
+  } else console.log(`ok   topics  (${TOPICS.length} topics with theory; built-in questions per topic: ${TOPIC_ORDER.map(t => `${t} ${perTopic[t] || 0}`).join(", ")})`);
+}
+
 // Console behaviour that objectives and coaching rely on.
 if (!only) {
   const problems = [];

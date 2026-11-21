@@ -341,3 +341,71 @@ code.big { font-size: 22px; padding: .15em .5em; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* ---------- home: review banner, view switch, topics ---------- */
+.review { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 16px; margin-bottom: 16px; background: var(--panel); }
+.review p { margin: 0 0 2px; }
+.review > div { flex: 1 1 320px; min-width: 0; }
+.review.due { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 9%, var(--panel)); padding: 14px 18px; }
+.review.due .eyebrow { color: var(--amber); }
+.switcher { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.segs { display: inline-flex; border: 1px solid var(--line-2); border-radius: 9px; overflow: hidden; background: var(--panel); }
+.seg { font: 600 14px var(--sans); color: var(--muted); background: transparent; border: 0; padding: .5em 1.1em; cursor: pointer; }
+.seg + .seg { border-left: 1px solid var(--line-2); }
+.seg.on { background: var(--accent); color: var(--accent-ink); }
+.sources select, .hb-pages { font: 13px var(--sans); color: var(--text); background: var(--panel); border: 1px solid var(--line-2); border-radius: 7px; padding: 4px 8px; }
+.track { margin-bottom: 30px; }
+.track-name { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-bottom: 14px; }
+.topic { margin-bottom: 22px; }
+.topic-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.topic-head h3 { font-size: 17px; }
+.topic-head p { margin: 2px 0 0; }
+.pips { display: inline-flex; gap: 3px; vertical-align: middle; flex: none; }
+.pips i { width: 14px; height: 6px; border-radius: 3px; background: var(--track); }
+.pips i.on { background: var(--green); }
+.tag.practice { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
+.tag.theory { color: var(--blue); border-color: color-mix(in srgb, var(--blue) 45%, transparent); }
+.card.theory { background: color-mix(in srgb, var(--blue) 6%, var(--panel)); }
+
+/* ---------- study page ---------- */
+.study-wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; align-items: start; }
+.study-main h1 { font-size: clamp(26px, 4vw, 34px); margin-bottom: .2em; }
+.lead { font-size: 16.5px; margin-bottom: 18px; }
+.study-side { position: sticky; top: calc(var(--topbar) + 16px); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.study-side h2 { font-size: 15px; margin-bottom: 4px; }
+.study-side h3 { font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 18px 0 6px; }
+.study-side .btn.block { margin-top: 8px; }
+.side-link { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 6px; color: var(--text); text-decoration: none; font-size: 13.5px; }
+a.side-link:hover { border-color: var(--accent); }
+.side-link.locked { opacity: .5; }
+.study-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 28px; flex-wrap: wrap; }
+.prose { font-size: 15.5px; line-height: 1.6; max-width: 78ch; }
+.prose .hb-section h3 { font-size: 19px; color: var(--text); margin: 26px 0 8px; position: static; background: none; padding: 0; }
+.prose table { font-size: 13.5px; }
+.prose blockquote { font-size: 14.5px; }
+
+/* shared by the handbook drawer and the study page */
+.prose table { border-collapse: collapse; width: 100%; }
+.prose th, .prose td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
+.prose th { color: var(--muted); background: var(--panel-2); }
+.prose pre { background: var(--term-bg); color: var(--term); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow: auto; font-size: 13.5px; }
+.prose blockquote { margin: 14px 0; padding: 8px 12px; border-left: 3px solid var(--gold); background: color-mix(in srgb, var(--gold) 8%, transparent); border-radius: 0 8px 8px 0; }
+.prose ul, .prose ol, .hb-body ol { padding-left: 22px; margin: 8px 0; }
+.prose li, .hb-body li { margin: 3px 0; }
+.prose .hb-table { overflow-x: auto; margin: 10px 0 14px; }
+.hb-body pre { color: var(--term); border: 1px solid var(--line); }
+.hb-pages { max-width: 210px; }
+
+/* ---------- activity extras ---------- */
+.theory-link { margin: 0 0 12px; }
+.q-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; min-height: 20px; }
+.src-badge { font: 700 10.5px var(--sans); letter-spacing: .08em; text-transform: uppercase; border-radius: 5px; padding: .2em .55em; }
+.src-badge.book { background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber); border: 1px solid color-mix(in srgb, var(--amber) 50%, transparent); }
+.src-badge.custom { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent); }
+.mastery-line { display: flex; align-items: center; gap: 12px; margin: 10px 0; }
+.queued { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--bg-2); }
+
+@media (max-width: 900px) {
+  .study-wrap { grid-template-columns: minmax(0, 1fr); }
+  .study-side { position: static; }
+}
