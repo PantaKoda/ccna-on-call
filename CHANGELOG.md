@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-21
+
 ### Added
 
 - A choice of exam on the first screen: CCNA 200-301 **v1.1** (six domains) or **v2.0** (five domains). Topics, theory, promotion exams and the career path follow the blueprint you pick, grouped by its domains with their exam weights. Switch at any time with the Exam button in the top bar; progress is shared.
