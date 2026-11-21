@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-21
+
 ### Added
 
 - The simulator now runs spanning tree. Each VLAN gets its own tree with a root bridge, root, designated and alternate ports and path costs, and `show spanning-tree`, `show spanning-tree vlan`, `show spanning-tree summary` and `show spanning-tree inconsistentports` show it. New commands: `spanning-tree mode`, `spanning-tree vlan <list> priority`, `root primary`, `root secondary`, `spanning-tree guard root` and `spanning-tree cost`.
