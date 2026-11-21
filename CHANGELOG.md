@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-21
+
 ### Added
 
 - Subnetting theory: a worked example that takes 10.45.170.77/19 through binary step by step (place values, mask, block size, network, broadcast, host range, host count), with what each value is used for, then a quick recipe without binary and two examples.
