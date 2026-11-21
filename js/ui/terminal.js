@@ -55,7 +55,7 @@ export class Terminal {
     this.histPos = this.hist.length;
     const out = this.execFn(line);
     if (out === "\f") this.out.replaceChildren();
-    else if (out) for (const part of out.split("\n")) this.print(part || " ", /^%[A-Z]+-\d-/.test(part) ? "log" : part.startsWith("%") ? "warn" : "");
+    else if (out) for (const part of out.split("\n")) this.print(part || " ", /^%[A-Z]+-\d-/.test(part) ? "log" : part.startsWith("%") ? "warn" : part.startsWith("Tip: ") ? "tip" : "");
     this.sync();
     this.scroll();
     this.onAfter();

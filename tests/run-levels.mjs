@@ -44,6 +44,37 @@ for (const level of LEVELS) {
   if (only && process.argv.includes("-v") && !problems.length) console.log(transcript.join("\n"));
 }
 
+// Console behaviour that objectives and coaching rely on.
+if (!only) {
+  const problems = [];
+  const lab = new Lab(LEVELS.find(l => l.id === "first-console"));
+  const shown = () => lab.progress().find(o => o.text.startsWith("Display the running")).done;
+  const expect = (cond, what) => { if (!cond) problems.push(what); };
+  let out = lab.exec("SW1", "show running-config");
+  expect(/% Invalid/.test(out) && /Tip: .*enable/.test(out), "user mode: show running-config should be rejected with an 'enable' tip");
+  expect(!shown(), "a show command rejected in user mode must not complete the objective");
+  lab.exec("SW1", "enable");
+  out = lab.exec("SW1", "hostname X");
+  expect(/Tip: .*configure terminal/.test(out), "privileged mode: a config command should get a 'configure terminal' tip");
+  lab.exec("SW1", "configure terminal");
+  out = lab.exec("SW1", "show running-config");
+  expect(/% Invalid/.test(out) && /Tip: .*do show running-config/.test(out), "config mode: show should be rejected with a 'do' tip");
+  expect(!shown(), "a show command rejected in config mode must not complete the objective");
+  out = lab.exec("SW1", "copy running-config startup-config");
+  expect(/% Invalid/.test(out) && /Tip: /.test(out), "config mode: copy should be rejected with a tip");
+  out = lab.exec("SW1", "switchport mode access");
+  expect(/Tip: .*interface/.test(out), "config mode: an interface command should get an 'interface' tip");
+  out = lab.exec("SW1", "frobnicate now");
+  expect(/% Invalid/.test(out) && !/Tip:/.test(out), "an unknown command should be rejected without a tip");
+  lab.exec("SW1", "do show running-config");
+  expect(shown(), "'do show running-config' in config mode should complete the objective");
+  if (problems.length) {
+    failed++;
+    console.log("FAIL console behaviour");
+    for (const p of problems) console.log("   - " + p);
+  } else console.log("ok   console behaviour  (rejected commands do not count; wrong-mode tips)");
+}
+
 // The built-in question bank: well formed, and big enough for every exam.
 if (!only) {
   const { QUESTIONS } = await import("../js/game/questions.js");

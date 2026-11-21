@@ -14,6 +14,8 @@ It is a static web app (plain HTML, CSS and ES modules, no build step, no backen
 - **A PC command prompt**: `ipconfig`, `ping`, `tracert`, `ssh`, `telnet`, `curl`, plus an IP settings bar for static/DHCP addressing.
 - **Scoring**: three stars per level (minus one per hint, minus one for going over par time), XP, and a rank that rises as you clear tiers.
 - **Handbook**: a searchable command reference, one click away during any ticket.
+- **Coaching**: when a command is rejected only because you are in the wrong mode, a tip says which mode it belongs in.
+- **Light and dark mode**, following your system setting until you pick one.
 
 | Tier | Rank | Topics |
 | --- | --- | --- |

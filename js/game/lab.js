@@ -64,7 +64,9 @@ export class Lab {
     const out = s.exec(line);
     if (!wasPrompt && line.trim()) {
       const target = s.remote ? s.remote.dev.name : devName;
-      (this.cmdLog[target] ||= []).push(line.trim());
+      // only commands the device accepted count toward "ran this command" objectives
+      const rejected = /% (Invalid input|Incomplete command|Ambiguous command|Unknown command|Not simulated)/.test(out);
+      if (!rejected) (this.cmdLog[target] ||= []).push(line.trim());
       this.commands++;
     }
     const cur = s.remote || s;

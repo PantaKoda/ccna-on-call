@@ -27,7 +27,17 @@ function renderTopbar(level) {
     h("span", { class: "top-rank", title: "Your rank" }, r.rank),
     h("span", { class: "top-xp" }, `${t.xp} XP`),
     h("button", { class: "btn small", onclick: toggleHandbook, title: "Searchable command reference" }, "Handbook"),
+    themeButton(level),
   ].filter(Boolean));
+}
+
+// The button names the theme you would switch to.
+function themeButton(level) {
+  const to = window.ccnaTheme.get() === "light" ? "dark" : "light";
+  return h("button", {
+    class: "btn small theme-btn", "aria-label": `Switch to ${to} mode`, title: `Switch to ${to} mode`,
+    onclick: () => { window.ccnaTheme.set(to); renderTopbar(level); },
+  }, h("span", { "aria-hidden": "true" }, to === "light" ? "☀" : "☾"), h("span", { class: "theme-word" }, to === "light" ? "Light" : "Dark"));
 }
 
 // ------------------------------------------------------------ career screen

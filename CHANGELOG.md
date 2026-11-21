@@ -4,6 +4,16 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- Light mode. A button in the top bar switches between light and dark; the choice is remembered, and until you choose, the game follows your system setting.
+- Wrong-mode tips in the console. When a command is rejected only because of the mode you are in, a tip says where it belongs: for example `show running-config` typed in configuration mode suggests `do show running-config` or `end`, and `hostname` typed at the `#` prompt suggests `configure terminal`.
+- `copy startup-config running-config` now explains that it is not simulated instead of pointing at a syntax error.
+
+### Fixed
+
+- A command the device rejected no longer completes an objective. Typing `show running-config` in configuration mode used to tick "Display the running configuration" in First Console even though the switch answered `% Invalid input`.
+
 ## [0.1.0] - 2026-11-21
 
 ### Added

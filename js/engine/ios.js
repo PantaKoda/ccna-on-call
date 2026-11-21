@@ -729,8 +729,29 @@ export class IosSession {
       const g = parse("config", kind, text);
       if (!g.err) { this.mode = "config"; this.ctx = {}; r = g; }
     }
-    if (r.err) return this.errorText(r, text);
+    if (r.err) return this.errorText(r, text) + this.modeTip(text);
     return r.cmd.fn(this, ...r.args);
+  }
+
+  // The game's coaching, not IOS: when a command is rejected only because it
+  // was typed in the wrong mode, say which mode it belongs to.
+  modeTip(text) {
+    const kind = this.dev.kind;
+    const ok = m => !parse(m, kind, text).err;
+    const tip = t => "\nTip: " + t;
+    const exec = this.mode === "user" || this.mode === "priv";
+    if (!exec && ok("priv")) return tip(`"${text}" is a privileged EXEC command, so it is not accepted in configuration mode. Type "do ${text}", or "end" first.`);
+    if (this.mode === "user" && ok("priv")) return tip('this command needs privileged mode. Type "enable" first.');
+    if (exec && ok("config")) return tip(`this is a configuration command. Type ${this.mode === "user" ? '"enable", then ' : ""}"configure terminal" first.`);
+    const SUBMODES = [
+      ["if", "an interface", "interface g0/1"], ["line", "a line", "line console 0"], ["router", "a routing process", "router ospf 1"],
+      ["vlan", "a VLAN", "vlan 10"], ["dhcp", "a DHCP pool", "ip dhcp pool NAME"], ["acl", "a named access list", "ip access-list extended NAME"],
+    ];
+    for (const [m, what, how] of SUBMODES) {
+      if (m === this.mode || !ok(m)) continue;
+      return tip(`this command configures ${what}. ${exec ? "In configuration mode, select" : "Select"} one first, for example "${how}".`);
+    }
+    return "";
   }
 
   runIn(mode, text, keep) {
@@ -851,6 +872,7 @@ function saveConfig(s) {
   return "Building configuration...\n[OK]";
 }
 reg("priv", "copy running-config startup-config", s => { s.ask("Destination filename [startup-config]? ", () => saveConfig(s)); });
+reg("priv", "copy startup-config running-config", () => "% Not simulated: merging the saved configuration back into the running one.\nTip: to undo your changes, use the Reset lab button. To save them, the order is \"copy running-config startup-config\".");
 reg("priv", "write", saveConfig);
 reg("priv", "write memory", saveConfig);
 reg("priv", "reload", () => "% Reload is disabled in this lab. Use the Reset Lab button to start the ticket over.");
@@ -898,8 +920,9 @@ reg(EXEC, "traceroute <ip>", (s, ip) => {
 
 // show ...
 const show = (pat, fn, kinds) => reg(EXEC, "show " + pat, fn, kinds);
-show("running-config", s => needPriv(s) ? `Building configuration...\n\nCurrent configuration : ${runningConfig(s.dev).length} bytes\n${runningConfig(s.dev)}` : INVALID);
-show("startup-config", s => !needPriv(s) ? INVALID : s.dev.startup || "startup-config is not present");
+const NEED_PRIV = INVALID + '\nTip: this command needs privileged mode. Type "enable" first.';
+show("running-config", s => needPriv(s) ? `Building configuration...\n\nCurrent configuration : ${runningConfig(s.dev).length} bytes\n${runningConfig(s.dev)}` : NEED_PRIV);
+show("startup-config", s => !needPriv(s) ? NEED_PRIV : s.dev.startup || "startup-config is not present");
 show("ip interface brief", showIpIntBrief);
 show("interfaces", s => showInterfaces(s));
 show("interfaces <if>", (s, n) => showInterfaces(s, n));
