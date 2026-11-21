@@ -141,6 +141,238 @@ The same mask values repeat in the third octet: /17 is 128, /18 is 192, /19 is 2
 
 A **wildcard mask** is the inverse of a subnet mask (255 minus each octet): /24 is 0.0.0.255, /30 is 0.0.0.3. OSPF and access lists use wildcards.
 
+## Worked example in binary: 10.45.170.77/19
+
+### The one idea behind everything
+
+An IPv4 address is 32 bits, and the prefix splits it into two parts:
+
+```
+|<---------- network part ---------->|<-- host part -->|
+         first 19 bits (/19)              last 13 bits
+```
+
+- The **network part** says which subnet you're in. Every device in the same subnet has exactly the same network bits.
+- The **host part** says which device inside that subnet you are.
+
+Every value we calculate is the address with its host bits set in a special way. Each of these addresses also has a job in a real network:
+
+| What | Network bits | Host bits | What it's used for |
+| --- | --- | --- | --- |
+| **Network address** | kept | **all 0** | The *name* of the subnet. Routers store it in their routing tables, and you write it in ACLs and routing-protocol `network` commands. It can **not** be given to a device. |
+| **Broadcast address** | kept | **all 1** | A packet sent here goes to **every device in the subnet** at once. It can **not** be given to a device. |
+| **First usable host** | kept | all 0 except the last bit = 1 | The lowest address a device can have. By convention it's often the **router interface** (the default gateway). |
+| **Last usable host** | kept | all 1 except the last bit = 0 | The highest address a device can have. Some networks put the gateway here instead. First to last is the range for a DHCP pool. |
+
+Network and broadcast are reserved, so "usable hosts" is always the total minus 2.
+
+### Tool you need: binary place values
+
+To convert between decimal and binary, you use the **place values of binary**. It's the same idea as decimal place values.
+
+In decimal, each position is worth 10 times the one to its right:
+
+```
+ 1000   100   10   1        so 427 = 4·100 + 2·10 + 7·1
+```
+
+In binary, each position is worth **2 times** the one to its right. One octet has 8 positions:
+
+```
+ 2⁷   2⁶   2⁵   2⁴   2³   2²   2¹   2⁰
+128   64   32   16    8    4    2    1
+```
+
+A binary number is the sum of the weights where there's a 1:
+
+```
+10101010  =  128 + 32 + 8 + 2  =  170
+```
+
+**To convert decimal to binary,** go from left to right. If the weight fits into what's left, write 1 and subtract it; otherwise write 0.
+
+For 170: 128 fits (42 left) → 1, 64 doesn't → 0, 32 fits (10 left) → 1, 16 doesn't → 0, 8 fits (2 left) → 1, 4 doesn't → 0, 2 fits (0 left) → 1, 1 doesn't → 0. So 170 = `10101010`.
+
+### Step 1: Write the address in binary and mark the boundary
+
+10.45.170.77 in binary, octet by octet:
+
+```
+   10    .    45    .   170    .    77
+00001010 . 00101101 . 10101010 . 01001101
+```
+
+/19 means the first 19 bits are the network. Octets 1 and 2 give 16 bits, and you need 3 more, so the boundary sits **3 bits into the 3rd octet**:
+
+```
+00001010 . 00101101 . 101|01010 . 01001101
+<----- network: 19 bits ---->|<-- host: 13 bits -->
+```
+
+That's what "/19 = 8 + 8 + 3" means.
+
+- Octets 1 and 2 are **fully network**, so they are copied unchanged (10.45).
+- Octet 4 is **fully host**, so it becomes 0 for the network address and 255 for the broadcast.
+- Octet 3 is **mixed**. This is the **interesting octet**, and its value is **170**. All the real work happens here.
+
+**Used for:** knowing which single octet to calculate. The others are copied or filled automatically.
+
+### Step 2: Subnet mask (why 224?)
+
+The mask is 1s for every network bit and 0s for every host bit:
+
+```
+11111111 . 11111111 . 11100000 . 00000000
+  255    .   255    .   224    .    0
+```
+
+The 3rd octet is `11100000`. Using the place values, the three 1s are worth 128 + 64 + 32 = **224**.
+
+**Mask: 255.255.224.0**
+
+**Used for:** configuring interfaces. For example, `ip address 10.45.160.1 255.255.224.0`. Many devices want the mask in dotted form, not as /19.
+
+### Step 3: Block size (why 32, and why 256 − 224?)
+
+Look at where the **last network bit** sits in the 3rd octet:
+
+```
+weights:  128  64  32 | 16   8   4   2   1
+mask:       1   1   1 |  0   0   0   0   0
+                    ^
+          last network bit = 32
+```
+
+The network bits can only change in steps of that smallest network bit, so subnets go up 32 at a time in this octet: 0, 32, 64, 96, 128, 160, 192, 224.
+
+The quick formula is 256 − mask. The host bits together are worth 16 + 8 + 4 + 2 + 1 = 31, and 31 + 1 = 32. Since mask + 31 = 255, block = 256 − mask.
+
+**Block size = 32**
+
+**Used for:**
+
+- Listing all the subnets (0, 32, 64…)
+- Finding the next subnet and the broadcast
+- Quickly checking whether two IPs are in the same subnet
+- **Block size − 1** gives the **wildcard mask** used in ACLs and OSPF. Here that's 0.0.31.255.
+
+### Step 4: Network address (why 160?)
+
+Network address = keep the network bits, set every host bit to 0.
+
+Only the interesting octet needs work, so we take its value, **170**:
+
+```
+170 =  101|01010
+        ↓ set host bits to 0
+       101|00000  = 128 + 32 = 160
+```
+
+The 4th octet is all host bits, so it becomes 0.
+
+**Network: 10.45.160.0**
+
+**Why this always gives "the highest multiple of 32 not above 170":** split 170 into its two parts:
+
+```
+170 =  1 0 1 | 0 1 0 1 0
+      network|   host
+      128+32 |   8+2
+       = 160 |   = 10
+```
+
+- The network bits are worth 128, 64 and 32. **Each is a multiple of 32**, so their sum is too. The network part is always a multiple of 32.
+- The host bits are worth 16, 8, 4, 2 and 1. Even all together they're only 31, which is **less than 32**.
+
+Clearing the host bits removes less than 32 and leaves a multiple of 32. That's exactly the highest multiple of 32 that isn't above 170, because 160 ≤ 170 < 192.
+
+You can check it with ordinary division: 170 ÷ 32 = 5 with a remainder of 10. The remainder (10) is exactly the host bits (`01010`), and 5 × 32 = 160 is the network value.
+
+**Used for:** routing tables, ACLs, routing-protocol statements, and summarizing networks.
+
+### Step 5: Broadcast address (why 191.255?)
+
+Broadcast = keep the network bits, set every host bit to 1:
+
+```
+170 =  101|01010
+        ↓ set host bits to 1
+       101|11111  = 128 + 32 + 16 + 8 + 4 + 2 + 1 = 191
+```
+
+The 4th octet is all host bits, so it becomes 255.
+
+**Broadcast: 10.45.191.255**
+
+**Shortcut:** the next subnet starts at 160 + 32 = 192, so the broadcast is the address just before 10.45.192.0, which is 10.45.191.255.
+
+**Used for:** sending one packet to every device in the subnet. It also marks the end of the subnet's range.
+
+### Step 6: First and last usable host
+
+Network (all 0) and broadcast (all 1) are reserved, so devices get everything in between:
+
+- **First usable:** host bits `0…01`, which is 10.45.160.**1**
+- **Last usable:** host bits `1…10`, which is 10.45.191.**254**
+
+**Used for:** choosing the gateway address (usually the first) and setting the DHCP pool range.
+
+### Step 7: Number of usable hosts (why 8190?)
+
+There are 32 − 19 = **13 host bits**. Each bit can be 0 or 1, so there are 2¹³ = 8192 possible patterns. Take away the two reserved ones:
+
+8192 − 2 = **8190 usable hosts**
+
+**Used for:** checking whether a subnet is big enough. It also works backwards in design. For example, if a subnet needs 500 hosts: 2⁹ − 2 = 510 is enough, so you need 9 host bits, which is a /23.
+
+### Summary
+
+| Item | Value | Why |
+| --- | --- | --- |
+| Subnet mask | 255.255.224.0 | 19 ones, then 13 zeros |
+| Network address | 10.45.160.0 | host bits all 0 |
+| First usable | 10.45.160.1 | network + 1 |
+| Last usable | 10.45.191.254 | broadcast − 1 |
+| Broadcast | 10.45.191.255 | host bits all 1 |
+| Usable hosts | 8190 | 2¹³ − 2 |
+
+## The quick version: no binary
+
+After you understand *why* the steps above work, you can skip the binary.
+
+### Recipe
+
+1. **Interesting octet:** /1 to /8 → 1st octet, /9 to /16 → 2nd, /17 to /24 → 3rd, /25 to /32 → 4th
+2. **Network bits in that octet** = prefix − (0, 8, 16 or 24)
+3. **Mask value** for 0 to 8 bits: `0 128 192 224 240 248 252 254 255`
+4. **Block size** = 256 − mask value
+5. **Network value** = highest multiple of the block size that isn't above the IP's octet. Earlier octets are copied; later octets are **0**.
+6. **Broadcast value** = network value + block size − 1. Later octets are **255**.
+7. **First host** = network + 1, and **last host** = broadcast − 1
+8. **Usable hosts** = 2^(32 − prefix) − 2
+
+### Example A: 10.45.170.77/19
+
+The interesting octet is the 3rd; its value is 170.
+
+- 19 − 16 = 3 bits → mask value 224 → **255.255.224.0**
+- Block: 256 − 224 = **32**
+- Multiples of 32: …128, **160**, 192 → network **10.45.160.0**
+- Broadcast: 160 + 32 − 1 = 191 → **10.45.191.255**
+- Hosts: 10.45.160.1 to 10.45.191.254, so 2¹³ − 2 = **8190**
+
+### Example B: 172.16.5.200/27
+
+The interesting octet is the 4th; its value is 200.
+
+- 27 − 24 = 3 bits → mask value 224 → **255.255.255.224**
+- Block: 256 − 224 = **32**
+- Multiples of 32: …160, **192**, 224 → network **172.16.5.192**
+- Broadcast: 192 + 32 − 1 = 223 → **172.16.5.223**
+- Hosts: 172.16.5.193 to 172.16.5.222, so 2⁵ − 2 = **30**
+
+When the interesting octet is the last one, there are no later octets to fill with 0 or 255. The answer comes directly from that octet.
+
 > Common mistakes: giving a host the network or broadcast address; forgetting to subtract 2; working in the wrong octet for prefixes shorter than /24.
 
 <!-- topic: addressing -->
