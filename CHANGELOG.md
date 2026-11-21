@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-21
+
 ### Added
 
 - Every solved variant now earns points. A variant is worth the same XP as its original lab under the same rules: full points with no hints and inside the par time, less otherwise. Each new variant can earn them again.
