@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-21
+
 ### Added
 
 - New lab "Plan B" (tier 3): add floating static routes over a backup serial link on both routers, a host route that keeps one server's traffic on the backup link, then prove the failover by shutting the main link and bringing it back.
