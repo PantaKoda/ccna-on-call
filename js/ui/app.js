@@ -6,6 +6,7 @@ import { LEVELS, LEVEL_BY_ID, TIERS } from "../game/levels/index.js";
 import { mountLab } from "./labview.js";
 import { mountSubnet, mountQuiz } from "./drills.js";
 import { toggleHandbook, closeHandbook } from "./handbook.js";
+import { VERSION } from "../version.js";
 
 const app = document.getElementById("app");
 const TYPE = { lab: "Lab", subnet: "Drill", quiz: "Exam" };
@@ -59,6 +60,7 @@ function renderHome() {
   main.className = "home";
   main.replaceChildren(hero, ...tiers,
     h("footer", { class: "home-foot muted small" },
+      h("span", {}, `Version ${VERSION}`),
       h("span", {}, "Progress is saved in this browser."),
       h("button", { class: "linklike", onclick: () => { if (confirm("Erase all progress and start again as an intern?")) { store.reset(); renderHome(); } } }, "Reset progress")));
 }

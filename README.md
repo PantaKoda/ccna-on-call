@@ -86,9 +86,11 @@ js/game/
 js/ui/                        screens: career map, lab workspace, terminal, network map, drills, handbook
 data/                         optional personal data packs (git-ignored)
 tools/serve.mjs               dev server
+tools/release.mjs             cuts a release (version, changelog, tag, push)
 tools/import-data.mjs         builds data packs from the companion practice app
 tests/run-levels.mjs          level and question bank tests
 Dockerfile, nginx.conf        production image
+CHANGELOG.md                  what changed in each version
 ```
 
 ## Adding a level
@@ -127,6 +129,16 @@ Add an object to one of the `js/game/levels/tierN.js` files. A lab looks like th
 Drills use `type: "subnet"` with `params: { count, minLen, maxLen }`, and exams use `type: "quiz"` with `params: { domains, count, pass }`.
 
 Exam questions are added to `js/game/questions.js` as `[question, [options], indexOfAnswer, explanation]` under the right domain.
+
+## Releases
+
+Changes are listed in [CHANGELOG.md](CHANGELOG.md), and every version is a git tag and a GitHub release. The version of a running copy is shown at the bottom of the career screen.
+
+```bash
+node tools/release.mjs patch      # or minor, major, or an explicit version
+```
+
+The script expects the changes to be committed and described under `## [Unreleased]` in the changelog. It runs the tests, bumps the version, dates the changelog section, commits, tags, pushes and publishes the GitHub release. `--no-push` stops after the local commit and tag.
 
 ## Known limits of the simulator
 

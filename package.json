@@ -6,6 +6,7 @@
   "description": "CCNA: On Call - a gamified network engineering simulator",
   "scripts": {
     "test": "node tests/run-levels.mjs",
-    "start": "node tools/serve.mjs"
+    "start": "node tools/serve.mjs",
+    "release": "node tools/release.mjs"
   }
 }
