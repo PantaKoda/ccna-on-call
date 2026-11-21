@@ -1,7 +1,7 @@
-// Practice labs: each "skill" is a generator that builds a fresh variant of a
-// lab from a random seed (different addresses, VLAN numbers, names, and for the
-// troubleshooting skills a different fault), so the same skill can be repeated
-// without memorising one answer. The level tests run every generator over many
+// Lab variants: each template here is a generator that builds a fresh variant
+// of a story lab from a random seed (different addresses, VLAN numbers, names,
+// and for the troubleshooting ones a different fault), so a solved lab can be
+// repeated on demand without memorising one answer. The level tests run every generator over many
 // seeds and play its solution.
 
 import { C } from "./checks.js";
@@ -47,6 +47,28 @@ const ISP = (x, y, cmds) => ({ name: "ISP", kind: "router", hostname: "ISP", x, 
 // ---------------------------------------------------------------- generators
 const SKILLS = [
   // ---------- console and device basics
+  {
+    id: "cli-name", topic: "cli", name: "Name a device and save it", par: 180,
+    gen(x) {
+      const kind = x.pick(["switch", "router"]);
+      const name = `${x.pick(SITES)}-${kind === "switch" ? "SW" : "R"}${x.int(1, 9)}`;
+      const look = x.pick([["show running-config", "Display the running configuration", /^(do\s+)?sh\S*\s+ru/i], ["show version", "Display the software version", /^(do\s+)?sh\S*\s+ver/i], ["show ip interface brief", "List the interfaces and their status", /^(do\s+)?sh\S*\s+ip\s+int\S*\s+br/i]]);
+      return {
+        subject: `Name the new ${kind} ${name}`,
+        brief: [`Another factory-fresh ${kind} is on your bench. Give it its name, take a look at it, and save the configuration so the name survives a power cycle.`],
+        details: [["Hostname", name], ["Also run", look[0]]],
+        topology: { devices: [{ name: "D1", kind, hostname: kind === "switch" ? "Switch" : "Router", x: 500, y: 180 }, pc("PC1", 500, 400, "192.168.1.10", M24, "192.168.1.1")], links: [`D1:${kind === "switch" ? "fa0/1" : "g0/0"} PC1`] },
+        objectives: [
+          { text: `Set the hostname to \`${name}\``, check: C.hostname("D1", name) },
+          { text: look[1], check: C.ran("D1", look[2]) },
+          { text: "Save the configuration to NVRAM", check: C.saved("D1") },
+        ],
+        hints: ["`enable`, then `configure terminal`, then the `hostname` command. Show commands and the save are privileged EXEC commands, so type `end` first or put `do` in front.",
+          `\`hostname ${name}\`, \`end\`, \`${look[0]}\`, \`copy running-config startup-config\`.`],
+        solution: [{ on: "D1", cmds: ["enable", "configure terminal", `hostname ${name}`, "end", look[0], "copy running-config startup-config", ""] }],
+      };
+    },
+  },
   {
     id: "cli-setup", topic: "cli", name: "Name and secure a device", par: 300,
     gen(x) {
@@ -645,33 +667,36 @@ const SKILLS = [
     },
   },
 
-  // ---------- subnetting (the worksheet, not a lab)
-  { id: "subnet-last-octet", topic: "subnetting", name: "Subnets in the last octet (/24 to /30)", kind: "subnet", par: 360, params: { count: 4, minLen: 24, maxLen: 30 } },
-  { id: "subnet-third-octet", topic: "subnetting", name: "Subnets in the third octet (/17 to /23)", kind: "subnet", par: 480, params: { count: 4, minLen: 17, maxLen: 23 } },
 ];
 
-// The story ticket that teaches each skill. A skill opens for practice when
-// that ticket is reachable, and joins the review queue when it is closed.
+// Which story lab each template is a variant of. A lab can have more than one
+// (for example a build version and a troubleshooting version).
 const AFTER = {
-  "cli-setup": "lock-it-down", "subnet-last-octet": "subnet-sprint-1", "addr-lan": "desk-move", "addr-fault": "desk-move", "addr-svi": "switch-mgmt",
+  "cli-name": "first-console", "cli-setup": "lock-it-down", "addr-lan": "desk-move", "addr-fault": "desk-move", "addr-svi": "switch-mgmt",
   "vlan-access": "vlans-101", "vlan-trunk": "trunk-line", "vlan-fault": "trunk-line", roas: "router-on-a-stick", "port-sec": "port-security",
-  "static-chain": "static-routes", "subnet-third-octet": "subnet-sprint-2", "static-default": "default-route", "ospf-build": "ospf-single-area", "ospf-fault": "ospf-broken",
+  "static-chain": "static-routes", "static-default": "default-route", "ospf-build": "ospf-single-area", "ospf-fault": "ospf-broken",
   "dhcp-pool": "dhcp-pools", "nat-pat": "nat-edge", "acl-filter": "acl-guard", "ssh-setup": "ssh-hardening",
 };
-for (const s of SKILLS) s.after = AFTER[s.id];
+for (const k of SKILLS) k.after = AFTER[k.id];
 
 export { SKILLS };
-export const SKILL_BY_ID = new Map(SKILLS.map(s => [s.id, s]));
+export const SKILL_BY_ID = new Map(SKILLS.map(k => [k.id, k]));
+export const variantsOf = levelId => SKILLS.filter(k => k.after === levelId);
 
-// Build one playable variant of a skill.
+// Build one playable variant from a template and a seed.
 export function makePractice(skillId, seed = (Math.random() * 2 ** 31) | 0) {
   const skill = SKILL_BY_ID.get(skillId);
   if (!skill) return null;
-  const common = { id: `practice:${skill.id}`, practice: true, skill: skill.id, topic: skill.topic, seed, title: skill.name, par: skill.par, xp: 0 };
-  if (skill.kind === "subnet") {
-    return { ...common, type: "subnet", from: "Practice", subject: skill.name, brief: ["Work out each subnet from one host address. New addresses every time."], params: skill.params };
-  }
   const x = dice(seed);
   const from = x.pick(SENDERS);
-  return { ...common, type: "lab", from, ...skill.gen(x) };
+  return { id: `variant:${skill.id}`, practice: true, type: "lab", skill: skill.id, origin: skill.after, topic: skill.topic, seed, title: skill.name, par: skill.par, xp: 0, from, ...skill.gen(x) };
+}
+
+// A fresh random variant of a story lab, or null if it has none. When the lab
+// has several templates, `avoid` keeps the same one from coming up twice in a row.
+export function makeVariant(levelId, avoid) {
+  const options = variantsOf(levelId);
+  if (!options.length) return null;
+  const pool = options.length > 1 && avoid ? options.filter(k => k.id !== avoid) : options;
+  return makePractice(pool[Math.floor(Math.random() * pool.length)].id);
 }

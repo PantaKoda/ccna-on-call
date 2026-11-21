@@ -9,7 +9,9 @@ import { Topology } from "./topology.js";
 import { openHandbook } from "./handbook.js";
 import { LEVEL_TOPIC, TOPIC_BY_ID } from "../game/topics.js";
 
-export function mountLab(root, level, { onDone }) {
+// `actions` are extra buttons for the ticket (the app adds "New variant" here),
+// `note` is a line of small print under them.
+export function mountLab(root, level, { onDone, actions = [], note = null }) {
   let lab = new Lab(level);
   const topic = TOPIC_BY_ID.get(level.topic || LEVEL_TOPIC[level.id]);
   let hints = 0, solutionShown = false, start = Date.now(), finished = false;
@@ -21,9 +23,12 @@ export function mountLab(root, level, { onDone }) {
   const hintBtn = h("button", { class: "btn small", onclick: askHint });
   const closeBtn = h("button", { class: "btn primary block", hidden: true, onclick: finish }, "Close ticket");
   const ticket = h("div", { class: "win-body ticket" },
-    h("div", { class: "ticket-meta" }, h("span", { class: "tag" + (level.practice ? " practice" : "") }, level.practice ? "Practice" : `Tier ${level.tier}`), h("span", { class: "muted small" }, `From: ${level.from}`)),
+    h("div", { class: "ticket-meta" }, h("span", { class: "tag" + (level.practice ? " practice" : "") }, level.practice ? "Variant" : `Tier ${level.tier}`), h("span", { class: "muted small" }, `From: ${level.from}`)),
     h("h2", {}, level.subject),
-    topic && h("button", { class: "btn small theory-link", onclick: () => openHandbook(topic.id), title: "Open the theory page for this topic without leaving the lab" }, `Theory: ${topic.name}`),
+    h("div", { class: "ticket-actions" },
+      topic && h("button", { class: "btn small", onclick: () => openHandbook(topic.id), title: "Open the theory page for this topic without leaving the lab" }, `Theory: ${topic.name}`),
+      actions),
+    note && h("p", { class: "muted small ticket-note" }, note),
     level.brief.map(p => h("p", { html: rich(p) })),
     level.details && h("table", { class: "details" }, h("tbody", {}, level.details.map(([k, v]) => h("tr", {}, h("th", { scope: "row" }, k), h("td", {}, v))))),
     h("h3", {}, "Objectives"), objList, closeBtn,

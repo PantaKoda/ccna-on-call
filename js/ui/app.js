@@ -1,10 +1,10 @@
 // App shell: home (career path or topics), study pages, routing, results.
 
 import { h, rich, fmtTime, stars } from "./dom.js";
-import { store, untilText, MAX_BOX } from "./store.js";
+import { store } from "./store.js";
 import { LEVELS, LEVEL_BY_ID, TIERS } from "../game/levels/index.js";
 import { TRACKS, TOPIC_BY_ID, TOPIC_ORDER, LEVEL_TOPIC } from "../game/topics.js";
-import { SKILLS, SKILL_BY_ID, makePractice } from "../game/practice.js";
+import { variantsOf, makeVariant } from "../game/practice.js";
 import { mountLab } from "./labview.js";
 import { mountSubnet, mountQuiz, loadBank, countByTopic, SOURCES } from "./drills.js";
 import { toggleHandbook, closeHandbook, loadTheory, renderMarkdown } from "./handbook.js";
@@ -47,8 +47,10 @@ function themeButton(where) {
   }, h("span", { "aria-hidden": "true" }, to === "light" ? "☀" : "☾"), h("span", { class: "theme-word" }, to === "light" ? "Light" : "Dark"));
 }
 
-const pips = n => h("span", { class: "pips", title: `Mastery ${Math.round(n)} of ${MAX_BOX}`, "aria-label": `Mastery ${Math.round(n)} of ${MAX_BOX}` },
-  Array.from({ length: MAX_BOX }, (_, i) => h("i", { class: i < Math.round(n) ? "on" : "" })));
+// Go to a route, also when it is the one already showing (a new variant).
+function nav(hash) {
+  if (location.hash === hash) route(); else location.hash = hash;
+}
 
 // ------------------------------------------------------------ home
 function renderHome() {
@@ -56,11 +58,11 @@ function renderHome() {
   renderTopbar(null);
   const mode = store.pref("view", "career");
   main.className = "home";
-  main.replaceChildren(...[hero(), reviewBanner(), switcher(mode), ...(mode === "topics" ? topicsView() : careerView()),
+  main.replaceChildren(...[hero(), switcher(mode), ...(mode === "topics" ? topicsView() : careerView()),
     h("footer", { class: "home-foot muted small" },
       h("span", {}, `Version ${VERSION}`),
       h("span", {}, "Progress is saved in this browser."),
-      h("button", { class: "linklike", onclick: () => { if (confirm("Erase all progress, review schedule and exam history, and start again as an intern?")) { store.reset(); renderHome(); } } }, "Reset progress"))].filter(Boolean));
+      h("button", { class: "linklike", onclick: () => { if (confirm("Erase all progress and exam history, and start again as an intern?")) { store.reset(); renderHome(); } } }, "Reset progress"))].filter(Boolean));
 }
 
 function hero() {
@@ -71,27 +73,11 @@ function hero() {
       h("p", { class: "eyebrow" }, "Your rank"),
       h("h1", {}, r.rank),
       h("p", { class: "muted" }, next
-        ? "You're the on-call engineer. Study a topic, work its tickets on a simulated network, then keep it fresh with practice that comes back over time."
-        : "Every ticket closed. Keep the skills fresh with the review queue."),
+        ? "You're the on-call engineer. Study a topic, then work its tickets on a simulated network. Once you have solved a lab, open it again for a random variant whenever you want more practice."
+        : "Every ticket closed. Open any lab again for a fresh random variant."),
       h("div", { class: "xpbar", role: "progressbar", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100, "aria-label": "Experience" }, h("i", { style: `width:${pct}%` })),
       h("p", { class: "muted small" }, `${t.xp} / ${t.maxXp} XP · ${t.done} of ${t.count} tickets closed · ${t.stars} of ${t.maxStars} stars`)),
     next && h("a", { class: "btn primary big", href: `#/play/${next.id}` }, t.done ? "Next ticket" : "Start your first ticket", h("span", { class: "btn-sub" }, next.title)));
-}
-
-function reviewBanner() {
-  const due = store.due(), up = store.upcoming();
-  const name = id => SKILL_BY_ID.get(id).name;
-  if (due.length) {
-    return h("section", { class: "review due" },
-      h("div", {}, h("p", { class: "eyebrow" }, "Review due"),
-        h("p", {}, h("strong", {}, `${due.length} skill${due.length > 1 ? "s are" : " is"} ready to come back: `), due.slice(0, 3).map(name).join(", ") + (due.length > 3 ? ` and ${due.length - 3} more` : "") + "."),
-        h("p", { class: "muted small" }, "Each review is a new variant of the lab, with different addresses, names or faults.")),
-      h("a", { class: "btn primary", href: "#/review" }, "Start review"));
-  }
-  return h("section", { class: "review" }, h("p", { class: "muted small" },
-    h("strong", {}, "Review queue: "),
-    up ? `nothing due right now. Next up: ${name(up.id)}, ${untilText(up.due)}.`
-      : "empty for now. When you close a ticket, its skill comes back as a fresh variant after 15 minutes, then after 1, 3, 7, 16 and 35 days."));
 }
 
 function switcher(mode) {
@@ -125,12 +111,13 @@ function careerView() {
 function levelCard(l, next, showTopic = true) {
   const res = store.result(l.id), open = store.isUnlocked(l.id);
   const topic = TOPIC_BY_ID.get(LEVEL_TOPIC[l.id]);
+  const hasVariants = l.type === "lab" && variantsOf(l.id).length > 0, solved = store.variantCount(l.id);
   const inner = [
     h("div", { class: "card-top" }, h("span", { class: "tag " + l.type }, TYPE[l.type]), h("span", { class: "spacer" }),
       res ? stars(res.stars) : open ? h("span", { class: "muted small" }, `${l.xp} XP`) : h("span", { class: "lock", "aria-hidden": "true" }, "🔒")),
     h("h3", {}, l.title),
     h("p", { class: "muted small" }, l.subject),
-    res ? h("p", { class: "card-foot small" }, `${res.xp} / ${l.xp} XP · best ${fmtTime(res.best)}`)
+    res ? h("p", { class: "card-foot small" }, `${res.xp} / ${l.xp} XP · best ${fmtTime(res.best)}`, hasVariants ? ` · ${solved ? `${solved} variant${solved > 1 ? "s" : ""} solved` : "variants open"}` : "")
       : next && next.id === l.id ? h("p", { class: "card-foot small next" }, "Next up")
       : topic && showTopic ? h("p", { class: "card-foot small" }, topic.name) : null,
   ];
@@ -139,7 +126,7 @@ function levelCard(l, next, showTopic = true) {
     : h("div", { class: "card locked", "aria-disabled": "true", title: "Close the previous ticket in the career path to unlock this one" }, inner);
 }
 
-// ---- topics: theory first, then questions, tickets and practice for each topic
+// ---- topics: theory first, then questions and tickets for each topic
 function topicsView() {
   const counts = bank ? countByTopic(bank) : null;
   const want = bank && bank.hasBook ? store.pref("sources", "all") : "all";
@@ -147,13 +134,12 @@ function topicsView() {
   return TRACKS.map(track => h("section", { class: "track" },
     h("h2", { class: "track-name" }, track.name),
     TOPIC_ORDER.map(id => TOPIC_BY_ID.get(id)).filter(t => t.track === track.id).map(t => {
-      const levels = LEVELS.filter(l => LEVEL_TOPIC[l.id] === t.id), skills = SKILLS.filter(s => s.topic === t.id);
-      const m = store.mastery(t.id);
+      const levels = LEVELS.filter(l => LEVEL_TOPIC[l.id] === t.id);
       const c = counts ? counts[t.id] || { custom: 0, book: 0 } : null;
       const nq = c ? (want === "book" ? c.book : want === "custom" ? c.custom : c.custom + c.book) : 0;
       const split = c && bank.hasBook && want === "all" ? `${c.custom} custom · ${c.book} book` : c && bank.hasBook ? SOURCES[want].label + " questions" : "";
       return h("section", { class: "topic", id: `topic-${t.id}` },
-        h("header", { class: "topic-head" }, h("div", {}, h("h3", {}, t.name), h("p", { class: "muted small" }, t.blurb)), h("span", { class: "spacer" }), skills.length && m !== null ? pips(m) : null),
+        h("header", { class: "topic-head" }, h("div", {}, h("h3", {}, t.name), h("p", { class: "muted small" }, t.blurb))),
         h("div", { class: "cards" },
           h("a", { class: "card theory" + (store.isStudied(t.id) ? " done" : ""), href: `#/study/${t.id}` },
             h("div", { class: "card-top" }, h("span", { class: "tag theory" }, "Theory")), h("h3", {}, "Study the theory"),
@@ -163,21 +149,8 @@ function topicsView() {
             h("div", { class: "card-top" }, h("span", { class: "tag quiz" }, "Check")), h("h3", {}, "Quick check"),
             h("p", { class: "muted small" }, `${Math.min(6, nq)} questions, the ones you missed first.`),
             h("p", { class: "card-foot small" }, `${nq} question${nq > 1 ? "s" : ""}${split ? " · " + split : ""}`)) : null,
-          levels.map(l => levelCard(l, next, false)),
-          skills.map(practiceCard)));
+          levels.map(l => levelCard(l, next, false))));
     })));
-}
-
-function practiceCard(s) {
-  const st = store.skill(s.id), due = st && st.due <= Date.now(), open = store.skillOpen(s);
-  const inner = [
-    h("div", { class: "card-top" }, h("span", { class: "tag practice" }, "Practice"), h("span", { class: "spacer" }), open ? (st ? pips(st.box) : null) : h("span", { class: "lock", "aria-hidden": "true" }, "🔒")),
-    h("h3", {}, s.name),
-    h("p", { class: "muted small" }, s.kind === "subnet" ? "New addresses every time." : "A new variant every time: different numbers, names or faults."),
-    h("p", { class: "card-foot small" + (due ? " next" : "") }, !open ? `Opens with the ticket "${LEVEL_BY_ID.get(s.after).title}"` : !st ? "Not practised yet" : due ? "Review due" : `Next review ${untilText(st.due)}`),
-  ];
-  return open ? h("a", { class: "card" + (due ? " next" : ""), href: `#/practice/${s.id}` }, inner)
-    : h("div", { class: "card locked", "aria-disabled": "true", title: "Reach that ticket in the career path to open this practice" }, inner);
 }
 
 // ------------------------------------------------------------ study page
@@ -193,21 +166,19 @@ function study(t) {
     side));
   loadTheory().then(pages => { if (main.contains(article)) article.replaceChildren(renderMarkdown(pages[t.id] || "This page is not written yet.")); });
 
-  const levels = LEVELS.filter(l => LEVEL_TOPIC[l.id] === t.id), skills = SKILLS.filter(s => s.topic === t.id);
+  const levels = LEVELS.filter(l => LEVEL_TOPIC[l.id] === t.id);
   const renderSide = () => {
     const studied = store.isStudied(t.id);
     side.replaceChildren(...[
       h("h2", {}, "After reading"),
       h("button", { class: "btn block" + (studied ? "" : " primary"), onclick: () => { store.setStudied(t.id, !studied); renderSide(); } }, studied ? "✓ Studied (undo)" : "Mark as studied"),
       h("a", { class: "btn block", href: `#/check/${t.id}` }, "Quick check (questions)"),
-      levels.length ? h("h3", {}, "Tickets") : null,
+      levels.length ? h("h3", {}, "Labs") : null,
       levels.map(l => store.isUnlocked(l.id)
         ? h("a", { class: "side-link", href: `#/play/${l.id}` }, h("span", {}, l.title), store.result(l.id) ? stars(store.result(l.id).stars) : h("span", { class: "muted small" }, "open"))
         : h("div", { class: "side-link locked" }, h("span", {}, l.title), h("span", { "aria-hidden": "true" }, "🔒"))),
-      skills.length ? h("h3", {}, "Practice (new variant each time)") : null,
-      skills.map(s => store.skillOpen(s) ? h("a", { class: "side-link", href: `#/practice/${s.id}` }, h("span", {}, s.name), store.skill(s.id) ? pips(store.skill(s.id).box) : h("span", { class: "muted small" }, "new"))
-        : h("div", { class: "side-link locked" }, h("span", {}, s.name), h("span", { "aria-hidden": "true" }, "🔒"))),
-      levels.some(l => !store.isUnlocked(l.id)) ? h("p", { class: "muted small" }, "Locked items open as you reach them in the career path.") : null,
+      levels.some(l => !store.isUnlocked(l.id)) ? h("p", { class: "muted small" }, "Locked labs open as you reach them in the career path.") : null,
+      levels.some(l => variantsOf(l.id).length) ? h("p", { class: "muted small" }, "Solved a lab? Open it again and press New variant for a fresh version of it.") : null,
       h("a", { class: "btn ghost block", href: "#/" }, "Back to all topics"),
     ].flat().filter(Boolean));
   };
@@ -217,12 +188,33 @@ function study(t) {
 }
 
 // ------------------------------------------------------------ activities
+// Buttons shown on a lab's ticket for getting random variants of it.
+function variantTools(level) {
+  const origin = level.practice ? LEVEL_BY_ID.get(level.origin) : level;
+  if (!origin || !variantsOf(origin.id).length) return {};
+  const fresh = () => nav(`#/variant/${origin.id}`);
+  if (level.practice) {
+    return {
+      actions: [h("button", { class: "btn small primary", onclick: fresh, title: "Throw this one away and build a different random variant" }, "New variant"),
+        h("button", { class: "btn small", onclick: () => nav(`#/play/${origin.id}`) }, "Original lab")],
+      note: `A random variant of "${origin.title}". ${store.variantCount(origin.id)} solved so far.`,
+    };
+  }
+  if (!store.variantsOpen(origin.id)) return { note: "Solve this lab once and a New variant button appears here: the same skill with different addresses, names or faults, as often as you like." };
+  return {
+    actions: [h("button", { class: "btn small primary", onclick: fresh, title: "The same skill with different addresses, names or faults" }, "New variant")],
+    note: "You have solved this lab. New variant builds a random version of it; press it as often as you like.",
+  };
+}
+
+let lastTemplate = null;     // so a lab with two templates alternates instead of repeating
+
 function play(level) {
-  const tag = level.check ? "Check" : level.practice ? "Practice" : TYPE[level.type];
+  const tag = level.check ? "Check" : level.practice ? "Variant" : TYPE[level.type];
   renderTopbar({ tag, title: level.title });
   main.className = "play " + level.type;
   const mount = { lab: mountLab, subnet: mountSubnet, quiz: mountQuiz }[level.type];
-  view = mount(main, level, { onDone: res => showResult(level, res) });
+  view = mount(main, level, { onDone: res => showResult(level, res), ...(level.type === "lab" ? variantTools(level) : {}) });
 }
 
 const checkLevel = t => ({
@@ -232,11 +224,12 @@ const checkLevel = t => ({
 
 function showResult(level, res) {
   const close = () => { overlay.remove(); };
-  const go = hash => { close(); view = null; if (location.hash === hash) route(); else location.hash = hash; };
+  const go = hash => { close(); view = null; nav(hash); };
   const btn = (label, hash, cls = "") => h("button", { class: "btn " + cls, onclick: () => go(hash) }, label);
   const topic = TOPIC_BY_ID.get(level.topic || LEVEL_TOPIC[level.id]);
   const revisit = (res.review || []).map(id => TOPIC_BY_ID.get(id)).filter(Boolean);
   const revisitLine = revisit.length ? h("p", { class: "small" }, "Worth revisiting: ", revisit.map((t, i) => [i ? ", " : "", h("a", { href: `#/study/${t.id}`, onclick: close }, t.name)])) : null;
+  const explore = h("button", { class: "btn ghost", onclick: close }, "Keep exploring this lab");
   let body;
 
   if (res.check) {
@@ -248,34 +241,23 @@ function showResult(level, res) {
       h("div", { class: "actions" }, btn("Another round", `#/check/${topic.id}`, "primary"), btn("Study the theory", `#/study/${topic.id}`), btn("Back to topics", "#/")),
     ];
   } else if (level.practice) {
-    const passed = res.stars > 0;
-    const good = res.stars >= 2 && !res.solutionShown;
-    const r = store.practiced(level.skill, good);
-    const moreDue = store.due().filter(id => id !== level.skill);
-    const outcome = !passed ? res.failText
-      : !good ? "Solved, but with enough help that it does not count as remembered yet. It comes back in 15 minutes."
-      : !r.wasDue ? `Extra practice: the review schedule is unchanged. Next review ${untilText(r.due)}.`
-      : r.box >= MAX_BOX ? `Mastery ${r.box} of ${MAX_BOX}: this one has stuck. Next review ${untilText(r.due)}.`
-      : `Remembered. Mastery ${r.box} of ${MAX_BOX}; it comes back ${untilText(r.due)}.`;
+    const n = store.variantSolved(level.origin);
+    const origin = LEVEL_BY_ID.get(level.origin);
     body = [
-      h("p", { class: "eyebrow" }, passed ? "Practice complete" : "Not yet"), h("h2", {}, level.title),
-      passed ? h("div", { class: "result-stars" }, stars(res.stars)) : null,
-      h("div", { class: "mastery-line" }, pips(r.box), h("span", {}, outcome)),
+      h("p", { class: "eyebrow" }, "Variant solved"), h("h2", {}, level.title),
+      h("div", { class: "result-stars" }, stars(res.stars)),
       h("p", { class: "muted" }, `${fmtTime(res.seconds)} · ${res.detail.join(" · ")}`),
-      h("div", { class: "actions" },
-        moreDue.length ? btn(`Next review (${moreDue.length} due)`, "#/review", "primary") : null,
-        btn("Another variant", `#/practice/${level.skill}`, moreDue.length ? "" : "primary"),
-        btn("Study the theory", `#/study/${level.topic}`), btn("Back to topics", "#/"),
-        passed && level.type === "lab" ? h("button", { class: "btn ghost", onclick: close }, "Keep exploring this lab") : null),
+      h("p", { class: "small" }, `That is ${n} variant${n > 1 ? "s" : ""} of "${origin.title}" solved.`),
+      h("div", { class: "actions" }, btn("New variant", `#/variant/${origin.id}`, "primary"), btn("Original lab", `#/play/${origin.id}`), btn("Back to home", "#/"), explore),
     ];
-    store.setPref("view", "topics");
   } else {
     const before = store.rank().rank;
     const passed = res.stars > 0;
+    const firstTime = passed && !store.isDone(level.id);
     const gained = passed ? store.record(level, res.stars, res.seconds) : 0;
     const after = store.rank().rank;
-    const added = passed ? store.introduce(level.id) : [];
     const next = LEVELS[LEVELS.indexOf(level) + 1];
+    const hasVariants = passed && level.type === "lab" && variantsOf(level.id).length > 0;
     body = [
       h("p", { class: "eyebrow" }, passed ? (level.type === "lab" ? "Ticket closed" : "Passed") : "Not yet"),
       h("h2", {}, level.title),
@@ -283,15 +265,16 @@ function showResult(level, res) {
       passed ? h("p", { class: "result-xp" }, `+${gained} XP`, gained < store.xpFor(level, res.stars) ? h("span", { class: "muted small" }, " (best result kept)") : null) : h("p", {}, res.failText),
       h("p", { class: "muted" }, `${fmtTime(res.seconds)} · ${res.detail.join(" · ")}`),
       passed && after !== before ? h("p", { class: "promo" }, `Promotion: you are now ${/^[AEIOU]/.test(after) ? "an" : "a"} ${after}.`) : null,
-      added.length ? h("p", { class: "queued small" }, h("strong", {}, "Added to your review queue: "), added.map(s => s.name).join(", ") + ". A fresh variant comes back in 15 minutes.") : null,
+      hasVariants && firstTime ? h("p", { class: "small" }, "Random variants of this lab are now open: open the lab again and press New variant whenever you want more practice.") : null,
       revisitLine,
       passed && level.debrief ? h("div", { class: "debrief" }, h("strong", {}, "Debrief"), h("p", { html: rich(level.debrief) })) : null,
       h("div", { class: "actions" },
         passed && next ? btn(`Next: ${next.title}`, `#/play/${next.id}`, "primary") : null,
         !passed ? btn("Try again", `#/play/${level.id}`, "primary") : null,
+        hasVariants ? btn("Try a variant", `#/variant/${level.id}`) : null,
         !passed && topic ? btn("Study the theory", `#/study/${topic.id}`) : null,
         btn("Back to home", "#/"),
-        passed && level.type === "lab" ? h("button", { class: "btn ghost", onclick: close }, "Keep exploring this lab") : null),
+        passed && level.type === "lab" ? explore : null),
     ];
   }
 
@@ -314,13 +297,15 @@ function route() {
   closeHandbook();
   window.scrollTo(0, 0);
 
-  const m = /^#\/(play|practice|check|study)\/([\w:-]+)$/.exec(location.hash);
-  const [kind, id] = m ? [m[1], m[2]] : [location.hash === "#/review" ? "review" : "home", null];
+  const m = /^#\/(play|variant|check|study)\/([\w-]+)$/.exec(location.hash);
+  const [kind, id] = m ? [m[1], m[2]] : ["home", null];
   if (kind === "play" && LEVEL_BY_ID.has(id) && store.isUnlocked(id)) return play(LEVEL_BY_ID.get(id));
   if (kind === "study" && TOPIC_BY_ID.has(id)) return study(TOPIC_BY_ID.get(id));
   if (kind === "check" && TOPIC_BY_ID.has(id)) return play(checkLevel(TOPIC_BY_ID.get(id)));
-  const skillId = kind === "review" ? store.due()[0] : kind === "practice" ? id : null;
-  if (skillId && SKILL_BY_ID.has(skillId) && store.skillOpen(SKILL_BY_ID.get(skillId))) return play(makePractice(skillId));
+  if (kind === "variant" && LEVEL_BY_ID.has(id) && store.variantsOpen(id)) {
+    const variant = makeVariant(id, lastTemplate);
+    if (variant) { lastTemplate = variant.skill; return play(variant); }
+  }
   if (kind !== "home") history.replaceState(null, "", "#/");
   renderHome();
 }

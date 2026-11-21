@@ -5,7 +5,7 @@ A static web game (plain HTML, CSS, ES modules; no build step, no backend) that 
 ## Commands
 
 - `node tools/serve.mjs` runs the dev server on http://localhost:8080 (`?unlock=all` opens every level).
-- `npm test` plays every lab's scripted solution, runs every practice generator over 40 seeds, and checks topics, theory and the question bank. Run it after any change to `js/engine/`, `js/game/` or `content/`.
+- `npm test` plays every lab's scripted solution, runs every variant template over 40 seeds, and checks topics, theory and the question bank. Run it after any change to `js/engine/`, `js/game/` or `content/`.
 - `docker build -t ccna-on-call .` builds the production image; the build runs the tests.
 
 ## Release cycle
@@ -32,9 +32,10 @@ Several changes asked for in one request go out as one release. Never edit `js/v
 
 ## How the content fits together
 
-- A **topic** (`js/game/topics.js`) has a theory page (`content/theory.md`), story tickets (`LEVEL_TOPIC`), practice skills and exam questions.
-- A **practice skill** (`js/game/practice.js`) is a seeded generator; its `AFTER` entry names the story ticket that teaches it. Closing that ticket queues the skill for spaced review (intervals in `js/ui/store.js`).
-- The owner studies theory first and learns by repetition: when adding a topic, add the theory page, at least four custom questions and at least one practice generator, not only a story ticket.
+- A **topic** (`js/game/topics.js`) has a theory page (`content/theory.md`), story labs (`LEVEL_TOPIC`) and exam questions.
+- A **variant template** (`js/game/practice.js`) is a seeded generator that builds a random version of one story lab; its `AFTER` entry names that lab. Once the lab is solved, a New variant button on it calls the template.
+- The owner studies theory first and repeats on demand. When adding a lab, add its theory, at least four custom questions on the topic and at least one variant template.
+- Repetition is pull-based. The owner tried a spaced-review queue with a "Review due" banner in 0.3 and had it removed in 0.4: do not add schedules, due dates, reminders or home-screen banners unless asked.
 
 ## Conventions
 

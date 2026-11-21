@@ -1,5 +1,5 @@
 // Topics tie everything together: a theory page, the story tickets that teach
-// the topic, the practice labs that repeat it, and the exam questions about it.
+// the topic (each with random variants), and the exam questions about it.
 
 export const TRACKS = [
   { id: "foundations", name: "Foundations" },

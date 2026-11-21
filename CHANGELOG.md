@@ -4,6 +4,20 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Changed
+
+- Random variants are now on demand. Once you have solved a lab, a **New variant** button appears on it; each press builds a fresh random version of that lab (different addresses, names, or a different fault), as many times as you like. Inside a variant, "Original lab" takes you back.
+- Lab cards show how many variants of that lab you have solved.
+
+### Added
+
+- Variants for First Console (a new device name and a different show command each time), so 16 of the 18 labs now have them.
+
+### Removed
+
+- The review queue and its "Review due" banner on the home screen, along with the timed schedule and mastery levels. Nothing prompts you to repeat a lab any more.
+- The separate Practice cards on the Topics screen; variants are reached from the lab itself.
+
 ## [0.3.1] - 2026-11-21
 
 ### Fixed

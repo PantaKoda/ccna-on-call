@@ -44,13 +44,12 @@ for (const level of LEVELS) {
   if (only && process.argv.includes("-v") && !problems.length) console.log(transcript.join("\n"));
 }
 
-// Practice generators: every skill, over many random seeds, must build, start
+// Lab variants: every template, over many random seeds, must build, start
 // with something left to do, and be completed by its own solution.
 if (!only || only === "practice") {
   const { SKILLS, makePractice } = await import("../js/game/practice.js");
   const SEEDS = Number(process.env.PRACTICE_SEEDS || 40);
   for (const skill of SKILLS) {
-    if (skill.kind === "subnet") continue;
     const problems = [];
     const subjects = new Set();
     for (let seed = 1; seed <= SEEDS && problems.length < 4; seed++) {
@@ -70,9 +69,9 @@ if (!only || only === "practice") {
     }
     if (problems.length) {
       failed++;
-      console.log(`FAIL practice ${skill.id}`);
+      console.log(`FAIL variant ${skill.id}`);
       for (const p of problems) console.log("   - " + p);
-    } else console.log(`ok   practice ${skill.id}  (${SEEDS} seeds, ${subjects.size} distinct variants)`);
+    } else console.log(`ok   variant ${skill.id}  (of ${skill.after}; ${SEEDS} seeds, ${subjects.size} distinct)`);
   }
 }
 
@@ -94,8 +93,15 @@ if (!only) {
   for (const s of SKILLS) {
     if (!TOPIC_BY_ID.has(s.topic)) problems.push(`skill ${s.id}: unknown topic ${s.topic}`);
     const teacher = LEVELS.find(l => l.id === s.after);
-    if (!teacher) problems.push(`skill ${s.id}: "after" does not name a ticket`);
+    if (!teacher || teacher.type !== "lab") problems.push(`template ${s.id}: it is not attached to a lab`);
     else if (LEVEL_TOPIC[teacher.id] !== s.topic) problems.push(`skill ${s.id}: its ticket ${teacher.id} is in another topic`);
+  }
+  // every lab should have at least one variant template; these two are one-off capstones
+  const NO_VARIANTS = ["p1-outage", "greenfield-branch"];
+  for (const l of LEVELS) {
+    if (l.type !== "lab") continue;
+    const has = SKILLS.some(k => k.after === l.id);
+    if (!has && !NO_VARIANTS.includes(l.id)) problems.push(`lab ${l.id}: no variant template`);
   }
   const perTopic = {};
   for (const q of QUESTIONS) { const t = topicOfQuestion(q); perTopic[t] = (perTopic[t] || 0) + 1; }
