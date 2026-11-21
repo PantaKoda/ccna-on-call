@@ -106,9 +106,9 @@ export const LEVEL_TOPIC = {
   "vlans-101": "vlans", "trunk-line": "vlans",
   "router-on-a-stick": "intervlan",
   "port-security": "l2security",
-  "static-routes": "static", "default-route": "static",
+  "static-routes": "static", "default-route": "static", "floating-backup": "static",
   "ospf-single-area": "ospf", "ospf-broken": "ospf",
-  "dhcp-pools": "dhcp", "nat-edge": "nat", "acl-guard": "acl", "ssh-hardening": "access",
+  "dhcp-pools": "dhcp", "dhcp-relay": "dhcp", "nat-edge": "nat", "acl-guard": "acl", "ssh-hardening": "access",
   "ansible-rollout": "netops",
   "p1-outage": "capstone", "greenfield-branch": "capstone",
 };

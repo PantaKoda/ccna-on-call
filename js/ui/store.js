@@ -39,7 +39,7 @@ export const store = {
     if (unlockAll) return true;
     const list = store.levels();
     const i = list.findIndex(l => l.id === id);
-    return i === 0 || (i > 0 && store.isDone(list[i - 1].id));
+    return store.isDone(id) || i === 0 || (i > 0 && store.isDone(list[i - 1].id));
   },
   nextLevel: () => store.levels().find(l => !store.isDone(l.id)) || null,
   xpFor: (level, starCount) => Math.round(level.xp * XP_FACTOR[starCount]),

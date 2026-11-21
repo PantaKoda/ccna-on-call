@@ -49,11 +49,18 @@ export class Topology {
     const x0 = Math.min(...xs) - 120, y0 = Math.min(...ys) - 62;
     this.el.setAttribute("viewBox", `${x0} ${y0} ${Math.max(...xs) + 120 - x0} ${Math.max(...ys) + 84 - y0}`);
     // links first so devices sit on top
+    const pairKey = l => [l.a, l.b].sort().join("|");
+    const pairCount = {}, pairSeen = {};
+    for (const l of net.links) pairCount[pairKey(l)] = (pairCount[pairKey(l)] || 0) + 1;
     for (const l of net.links) {
-      const a = net.devs[l.a], b = net.devs[l.b];
       const up = st.status(l.a, l.ai).up && st.status(l.b, l.bi).up;
-      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+      const A = net.devs[l.a], B = net.devs[l.b];
+      const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy) || 1;
       const ux = dx / len, uy = dy / len;
+      // parallel links are shifted sideways so each one, and its port labels, stays readable
+      const k = pairKey(l), idx = (pairSeen[k] = (pairSeen[k] ?? -1) + 1), flip = l.a < l.b ? 1 : -1;
+      const shift = (idx - (pairCount[k] - 1) / 2) * 34 * flip;
+      const a = { ...A, x: A.x - uy * shift, y: A.y + ux * shift }, b = { ...B, x: B.x - uy * shift, y: B.y + ux * shift };
       nodes.push(s("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "link" + (up ? " up" : " down") + (l.ai.startsWith("Serial") ? " serial" : "") }));
       for (const [d, ifn, dir] of [[a, l.ai, 1], [b, l.bi, -1]]) {
         const sUp = st.status(d.name, ifn).up;

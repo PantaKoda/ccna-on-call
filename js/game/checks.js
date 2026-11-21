@@ -49,6 +49,19 @@ export const C = {
     const [a, len] = prefix.split("/");
     return net.st.rt[dev].some(r => r.net === I(a) && r.len === Number(len) && (!proto || r.proto.startsWith(proto)));
   },
+  // a static route to the prefix through this next hop with exactly this administrative distance
+  floating: (dev, prefix, nh, ad) => net => {
+    const [a, len] = prefix.split("/");
+    return net.devs[dev].routes.some(r => r.net === I(a) && maskLen(r.mask) === Number(len) && r.nh === I(nh) && (r.ad || 1) === ad);
+  },
+  // the route the device would use for this address right now: prefix length and next hop
+  routeVia: (dev, addr, nh, len) => net => {
+    const r = net.st.lookup(dev, I(addr));
+    return !!r && !!r.route && r.nh === (r.route.nh == null ? I(addr) : I(nh)) && r.route.nh === I(nh) && (len == null || r.route.len === len);
+  },
+  helper: (dev, n, addr) => net => { const i = iface(net, dev, n); return !!i && i.helpers.includes(I(addr)); },
+  // true once the condition has held at some moment during the lab (for "prove the failover" objectives)
+  sticky: (key, cond) => (net, lab) => { if (cond(net, lab)) lab.seen.add("sticky:" + key); return lab.seen.has("sticky:" + key); },
   staticRoute: (dev, prefix) => net => {
     const [a, len] = prefix.split("/");
     return net.devs[dev].routes.some(r => r.net === I(a) && maskLen(r.mask) === Number(len));

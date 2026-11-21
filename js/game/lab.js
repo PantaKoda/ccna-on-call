@@ -72,6 +72,7 @@ export class Lab {
     const cur = s.remote || s;
     if (cur.mode && cur.dev) this.seen.add(`mode:${cur.dev.name}:${cur.mode}`);
     this.net.touch();
+    this.progress();
     return out;
   }
 

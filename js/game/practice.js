@@ -102,6 +102,114 @@ export function ansibleRollout({ vid, vname, port, site, faults }) {
   };
 }
 
+// ---------------------------------------------------------------- floating and host routes
+// Two routers joined by a primary link and a backup serial link. Shared by the
+// story lab and its variants.
+export function floatingLab({ site, br, hq, p, b, ad, hostRoute }) {
+  const brLan = `192.168.${br}`, hqLan = `192.168.${hq}`, P = `10.0.${p}`, B = `10.0.${b}`, srv = `${hqLan}.50`;
+  const failover = net => !net.st.status("BR-R1", "GigabitEthernet0/1").up && net.st.reach("PC-BR", ((192 << 24) | (168 << 16) | (hq << 8) | 10) >>> 0).ok;
+  return {
+    subject: `${site} has one link to HQ and no plan B`,
+    brief: [`The ${site} branch reaches HQ over one Ethernet circuit. A backup serial line was installed last month and is up, but nothing uses it: when the main circuit failed on Tuesday the branch was offline for two hours.`,
+      `Add **floating static routes** on both routers so traffic moves to the serial line when the main circuit is down, and moves back by itself when it returns. Use administrative distance **${ad}** for them.${hostRoute ? ` Payroll's server (${srv}) is a special case: finance wants its traffic from the branch on the serial line **all the time**, which calls for a **host route**.` : ""}`,
+      "Then prove it: shut the main link, check the branch still reaches HQ, and bring the link back up before you close the ticket."],
+    details: [["Branch LAN", `${brLan}.0/24 (PC-BR is .10)`], ["HQ LAN", `${hqLan}.0/24 (PC-HQ is .10${hostRoute ? ", payroll server is .50" : ""})`],
+      ["Main link", `G0/1 on both routers, ${P}.0/30 (HQ is .1, branch is .2)`], ["Backup link", `S0/0/0 on both routers, ${B}.0/30 (HQ is .1, branch is .2)`],
+      ["Floating routes", `administrative distance ${ad}, on both routers`], hostRoute && ["Payroll server", `${srv}: always through the backup link from the branch`]].filter(Boolean),
+    topology: {
+      devices: [
+        { name: "BR-R1", kind: "router", hostname: "BR-R1", x: 240, y: 170, config: [...ifc("g0/0", `${brLan}.1`, M24), ...ifc("g0/1", `${P}.2`, M30), ...ifc("s0/0/0", `${B}.2`, M30), `ip route ${hqLan}.0 ${M24} ${P}.1`] },
+        { name: "HQ-R1", kind: "router", hostname: "HQ-R1", x: 700, y: 170, config: [...ifc("g0/0", `${hqLan}.1`, M24), ...ifc("g0/1", `${P}.1`, M30), ...ifc("s0/0/0", `${B}.1`, M30), `ip route ${brLan}.0 ${M24} ${P}.2`] },
+        { name: "HQ-SW", kind: "switch", hostname: "HQ-SW1", x: 700, y: 310 },
+        pc("PC-BR", 240, 430, `${brLan}.10`, M24, `${brLan}.1`), pc("PC-HQ", 600, 440, `${hqLan}.10`, M24, `${hqLan}.1`),
+        ...(hostRoute ? [{ name: "SRV-PAY", kind: "server", x: 820, y: 440, note: "Payroll", services: ["http"], ip: { mode: "static", ip: srv, mask: M24, gw: `${hqLan}.1` } }] : []),
+      ],
+      links: ["BR-R1:g0/1 HQ-R1:g0/1", "BR-R1:s0/0/0 HQ-R1:s0/0/0", "BR-R1:g0/0 PC-BR", "HQ-R1:g0/0 HQ-SW:g0/1", "HQ-SW:fa0/1 PC-HQ", ...(hostRoute ? ["HQ-SW:fa0/2 SRV-PAY"] : [])],
+    },
+    objectives: [
+      { text: `BR-R1 has a floating route to the HQ LAN through the backup link, with distance ${ad}`, check: C.floating("BR-R1", `${hqLan}.0/24`, `${B}.1`, ad) },
+      { text: `HQ-R1 has a floating route to the branch LAN through the backup link, with distance ${ad}`, check: C.floating("HQ-R1", `${brLan}.0/24`, `${B}.2`, ad) },
+      hostRoute && { text: `BR-R1 sends traffic for the payroll server (${srv}) through the backup link with a host route`, check: C.all(C.routeVia("BR-R1", srv, `${B}.1`, 32), C.ping("PC-BR", srv)) },
+      { text: "Failover proven: with the main link down, PC-BR still reaches PC-HQ", check: C.sticky("failover", failover) },
+      { text: "The main link is up and carrying the traffic: BR-R1 reaches the HQ LAN through G0/1", check: C.all(C.ifaceUp("BR-R1", "g0/1"), C.routeVia("BR-R1", `${hqLan}.10`, `${P}.1`, 24), C.ping("PC-BR", `${hqLan}.10`)) },
+      { text: "Save both routers", check: C.all(C.savedChanged("BR-R1"), C.savedChanged("HQ-R1")) },
+    ].filter(Boolean),
+    hints: [`A floating static route is an ordinary static route with a number on the end: \`ip route <network> <mask> <next-hop> ${ad}\`. The number is its administrative distance. Because it is higher than 1, the route stays out of the table while the main route is there.`,
+      `The backup next hop is the other router's address on the serial link (${B}.1 from the branch, ${B}.2 from HQ). Both routers need one, or replies have no way back.${hostRoute ? ` A host route uses the mask 255.255.255.255 and needs no distance: the longest match already makes it win.` : ""}`,
+      "To test: on BR-R1, `interface g0/1` then `shutdown`, and ping PC-HQ from PC-BR. `show ip route` now shows the route through the serial link. Then `no shutdown`, and the original route returns."],
+    solution: [
+      { on: "BR-R1", cmds: cfg(`ip route ${hqLan}.0 ${M24} ${B}.1 ${ad}`, ...(hostRoute ? [`ip route ${srv} 255.255.255.255 ${B}.1`] : [])) },
+      { on: "HQ-R1", cmds: [...cfg(`ip route ${brLan}.0 ${M24} ${B}.2 ${ad}`), "write memory"] },
+      { on: "BR-R1", cmds: ["configure terminal", "interface g0/1", "shutdown", "end", "show ip route"] },
+      { on: "PC-BR", cmds: [`ping ${hqLan}.10`] },
+      { on: "BR-R1", cmds: ["configure terminal", "interface g0/1", "no shutdown", "end", "write memory"] },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------- DHCP relay
+// Branch clients, DHCP server at HQ, a router in between. `fault` is null for
+// the build version, or names the one thing that is broken:
+//   wrong-if  - the helper address is on the WAN interface instead of the LAN
+//   wrong-ip  - the helper points at an address that is not the server
+//   pool-net  - the pool on the server is for the wrong subnet
+//   no-route  - the server has no route back to the branch LAN
+//   gateway   - the pool hands out a gateway that does not exist
+export function relayLab({ site, hq, br, w, ex, dns, fault }) {
+  const hqLan = `192.168.${hq}`, brLan = `192.168.${br}`, wan = `10.0.${w}`, server = `${wan}.1`, wrongNet = `192.168.${br === 250 ? 249 : br + 1}`;
+  const pool = (name, net, gw) => [`ip dhcp pool ${name}`, `network ${net}.0 ${M24}`, `default-router ${gw}`, `dns-server ${dns}`, "exit"];
+  const hqCfg = [...ifc("g0/0", `${hqLan}.1`, M24), ...ifc("g0/1", `${wan}.1`, M30), "exit", `ip dhcp excluded-address ${hqLan}.1 ${hqLan}.${ex}`, ...pool("HQ", hqLan, `${hqLan}.1`),
+    ...(fault !== "no-route" ? [`ip route ${brLan}.0 ${M24} ${wan}.2`] : []),
+    ...(fault ? [`ip dhcp excluded-address ${brLan}.1 ${brLan}.${ex}`, ...pool("BRANCH", fault === "pool-net" ? wrongNet : brLan, fault === "gateway" ? `${brLan}.254` : `${brLan}.1`)] : [])];
+  const brCfg = [...ifc("g0/0", `${brLan}.1`, M24), ...(fault && fault !== "wrong-if" ? [`ip helper-address ${fault === "wrong-ip" ? `${wan}.9` : server}`] : []),
+    ...ifc("g0/1", `${wan}.2`, M30), ...(fault === "wrong-if" ? [`ip helper-address ${server}`] : []), "exit", `ip route 0.0.0.0 0.0.0.0 ${wan}.1`];
+  const fix = {
+    "wrong-if": [{ on: "BR-R1", cmds: cfg("interface g0/1", `no ip helper-address ${server}`, "interface g0/0", `ip helper-address ${server}`) }],
+    "wrong-ip": [{ on: "BR-R1", cmds: cfg("interface g0/0", `no ip helper-address ${wan}.9`, `ip helper-address ${server}`) }],
+    "pool-net": [{ on: "HQ-R1", cmds: cfg("ip dhcp pool BRANCH", `network ${brLan}.0 ${M24}`) }],
+    "no-route": [{ on: "HQ-R1", cmds: cfg(`ip route ${brLan}.0 ${M24} ${wan}.2`) }],
+    gateway: [{ on: "HQ-R1", cmds: cfg("ip dhcp pool BRANCH", `default-router ${brLan}.1`) }],
+  };
+  const build = [
+    { on: "HQ-R1", cmds: cfg(`ip dhcp excluded-address ${brLan}.1 ${brLan}.${ex}`, "ip dhcp pool BRANCH", `network ${brLan}.0 ${M24}`, `default-router ${brLan}.1`, `dns-server ${dns}`) },
+    { on: "BR-R1", cmds: cfg("interface g0/0", `ip helper-address ${server}`) },
+  ];
+  return {
+    subject: fault ? `${site} branch PCs get no address` : `${site} branch needs DHCP from HQ`,
+    brief: fault
+      ? [`The ${site} branch was set up yesterday to take its addresses from the DHCP server at HQ, and it does not work: the branch PCs ${fault === "gateway" ? "get an address but reach nothing outside their own LAN" : "come up with 169.254 addresses"}. HQ's own PCs are fine.`,
+        "There is exactly one fault, on one of the two routers. A relayed request has to get from the branch router to the server, match a pool for the **branch** subnet, and the answer has to find its way back."]
+      : [`The ${site} branch has no DHCP server of its own, and its PCs have given themselves 169.254 addresses. HQ-R1 already serves the HQ LAN.`,
+        "A DHCP request is a broadcast, and routers do not forward broadcasts. Add a pool for the branch subnet on **HQ-R1**, and make **BR-R1** relay the branch's requests to it."],
+    details: [["DHCP server", `HQ-R1, reached at ${server}`], ["Branch LAN", `${brLan}.0/24 on BR-R1 G0/0, gateway .1`], ["Reserved", `.1 to .${ex} in each subnet`], ["DNS server", dns],
+      ["WAN link", `${wan}.0/30 (HQ is .1, branch is .2)`], ["Test target", `intranet server ${hqLan}.5`]],
+    topology: {
+      devices: [
+        { name: "HQ-R1", kind: "router", hostname: "HQ-R1", x: 700, y: 110, config: hqCfg, saved: false },
+        { name: "BR-R1", kind: "router", hostname: "BR-R1", x: 260, y: 110, config: brCfg, saved: false },
+        { name: "HQ-SW", kind: "switch", hostname: "HQ-SW1", x: 700, y: 270 }, { name: "BR-SW", kind: "switch", hostname: "BR-SW1", x: 260, y: 270 },
+        dhcpPc("PC-B1", 150, 430), dhcpPc("PC-B2", 370, 430), dhcpPc("PC-H1", 600, 430),
+        { name: "SRV1", kind: "server", x: 810, y: 430, note: "Intranet", services: ["http"], ip: { mode: "static", ip: `${hqLan}.5`, mask: M24, gw: `${hqLan}.1` } },
+      ],
+      links: ["BR-R1:g0/1 HQ-R1:g0/1", "BR-R1:g0/0 BR-SW:g0/1", "HQ-R1:g0/0 HQ-SW:g0/1", "BR-SW:fa0/1 PC-B1", "BR-SW:fa0/2 PC-B2", "HQ-SW:fa0/1 PC-H1", "HQ-SW:fa0/2 SRV1"],
+    },
+    objectives: [
+      { text: `BR-R1 relays DHCP requests from its LAN interface (G0/0) to ${server}`, check: C.helper("BR-R1", "g0/0", server) },
+      { text: `PC-B1 and PC-B2 lease addresses in ${brLan}.0/24 above .${ex}`, check: C.all(C.dhcpLease("PC-B1", `${brLan}.0/24`, ex + 1), C.dhcpLease("PC-B2", `${brLan}.0/24`, ex + 1)) },
+      { text: "The branch PCs received a working gateway (both can ping the intranet server)", check: C.all(C.ping("PC-B1", `${hqLan}.5`), C.ping("PC-B2", `${hqLan}.5`)) },
+      { text: "HQ's own PC still has its lease", check: C.dhcpLease("PC-H1", `${hqLan}.0/24`, ex + 1) },
+    ],
+    hints: fault
+      ? ["Follow the request. On BR-R1: `show running-config | include helper` and note which interface it is under; it must be the one facing the clients. Can BR-R1 ping the address it points at?",
+        "On HQ-R1: `show ip dhcp pool` lists each pool's subnet, and `show ip route` shows whether HQ knows the way back to the branch LAN. The server answers to the relay's LAN address, so without that route the offer is lost.",
+        "If the PCs get an address but cannot leave their LAN, run `ipconfig` on one and compare the gateway it received with the router's real address."]
+      : ["Two routers need work. The server needs a pool whose `network` is the **branch** subnet, with exclusions first. The branch router needs one line on the interface that faces the clients.",
+        `On HQ-R1: \`ip dhcp excluded-address ${brLan}.1 ${brLan}.${ex}\`, \`ip dhcp pool BRANCH\`, \`network ${brLan}.0 ${M24}\`, \`default-router ${brLan}.1\`, \`dns-server ${dns}\`.`,
+        `On BR-R1: \`interface g0/0\`, \`ip helper-address ${server}\`. Then \`ipconfig /all\` on a branch PC shows the lease and which server gave it.`],
+    solution: fault ? fix[fault] : build,
+  };
+}
+
 // ---------------------------------------------------------------- generators
 const SKILLS = [
   // ---------- console and device basics
@@ -726,6 +834,31 @@ const SKILLS = [
   },
 
 
+  // ---------- floating and host routes
+  {
+    id: "static-floating", topic: "static", name: "Add a backup path with floating routes", par: 720,
+    gen(x) {
+      const [br, hq] = x.sample(Array.from({ length: 200 }, (_, i) => i + 10), 2), [p, b] = x.sample(Array.from({ length: 200 }, (_, i) => i + 1), 2);
+      return floatingLab({ site: cap(x.pick(SITES).toLowerCase()), br, hq, p, b, ad: x.pick([150, 200, 210, 250]), hostRoute: x.bool() });
+    },
+  },
+
+  // ---------- DHCP relay
+  {
+    id: "relay-build", topic: "dhcp", name: "Relay DHCP to a server at another site", par: 600,
+    gen(x) {
+      const [hq, br] = x.sample(Array.from({ length: 200 }, (_, i) => i + 10), 2);
+      return relayLab({ site: cap(x.pick(SITES).toLowerCase()), hq, br, w: x.int(1, 250), ex: x.pick([10, 20]), dns: x.pick(["8.8.8.8", "1.1.1.1", "9.9.9.9"]), fault: null });
+    },
+  },
+  {
+    id: "relay-fault", topic: "dhcp", name: "Find why DHCP relay fails", par: 600,
+    gen(x) {
+      const [hq, br] = x.sample(Array.from({ length: 200 }, (_, i) => i + 10), 2);
+      return relayLab({ site: cap(x.pick(SITES).toLowerCase()), hq, br, w: x.int(1, 250), ex: x.pick([10, 20]), dns: x.pick(["8.8.8.8", "1.1.1.1", "9.9.9.9"]), fault: x.pick(["wrong-if", "wrong-ip", "pool-net", "no-route", "gateway"]) });
+    },
+  },
+
   // ---------- Ansible (v2.0 blueprint)
   {
     id: "ansible-vlan", topic: "netops", name: "Roll out a VLAN with Ansible", par: 780,
@@ -739,7 +872,7 @@ const SKILLS = [
 // Which story lab each template is a variant of. A lab can have more than one
 // (for example a build version and a troubleshooting version).
 const AFTER = {
-  "ansible-vlan": "ansible-rollout",
+  "ansible-vlan": "ansible-rollout", "static-floating": "floating-backup", "relay-build": "dhcp-relay", "relay-fault": "dhcp-relay",
   "cli-name": "first-console", "cli-setup": "lock-it-down", "addr-lan": "desk-move", "addr-fault": "desk-move", "addr-svi": "switch-mgmt",
   "vlan-access": "vlans-101", "vlan-trunk": "trunk-line", "vlan-fault": "trunk-line", roas: "router-on-a-stick", "port-sec": "port-security",
   "static-chain": "static-routes", "static-default": "default-route", "ospf-build": "ospf-single-area", "ospf-fault": "ospf-broken",

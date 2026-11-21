@@ -4,6 +4,18 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- New lab "Plan B" (tier 3): add floating static routes over a backup serial link on both routers, a host route that keeps one server's traffic on the backup link, then prove the failover by shutting the main link and bringing it back.
+- New lab "Far From the Server" (tier 4): serve a branch from a DHCP server at another site, with a pool for the remote subnet and `ip helper-address` on the branch router.
+- Variants for both: random addresses and distances for the floating-route lab, and for DHCP relay a build version and a troubleshooting version with five possible faults (helper on the wrong interface, helper to the wrong address, pool for the wrong subnet, no route back, wrong gateway in the pool).
+- The network map draws two links between the same pair of devices side by side, so a main and a backup link can both be read.
+
+### Fixed
+
+- A lab you had already closed can no longer become locked when a new lab is added earlier in the career path.
+- The "Solved" tag on a lab's ticket now appears only if you really solved it.
+
 ## [0.6.0] - 2026-11-21
 
 ### Added

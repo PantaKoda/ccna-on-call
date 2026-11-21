@@ -1,5 +1,5 @@
 import { C } from "../checks.js";
-import { ansibleRollout } from "../practice.js";
+import { ansibleRollout, relayLab } from "../practice.js";
 
 const M24 = "255.255.255.0";
 const M30 = "255.255.255.252";
@@ -45,6 +45,15 @@ export default [
     ],
     solution: [{ on: "R1", cmds: ["enable", "configure terminal", "ip dhcp excluded-address 192.168.10.1 192.168.10.10", "ip dhcp excluded-address 192.168.20.1 192.168.20.10", "ip dhcp pool STAFF", "network 192.168.10.0 255.255.255.0", "default-router 192.168.10.1", "dns-server 8.8.8.8", "ip dhcp pool GUEST", "network 192.168.20.0 255.255.255.0", "default-router 192.168.20.1", "dns-server 8.8.8.8", "end"] }],
     debrief: "A 169.254.x.x (APIPA) address on a Windows PC means \"I asked for DHCP and nobody answered\". It's a symptom of the DHCP path, never a valid address to troubleshoot from.",
+  },
+
+  {
+    id: "dhcp-relay", tier: 4, type: "lab", xp: 280, par: 660,
+    title: "Far From the Server",
+    from: "Priya Raman, Service Desk",
+    skills: ["ip helper-address", "a pool for a remote subnet", "ipconfig /all", "show ip dhcp binding"],
+    ...relayLab({ site: "Harbour", hq: 10, br: 60, w: 7, ex: 10, dns: "8.8.8.8", fault: null }),
+    debrief: "The helper address goes on the interface that hears the clients' broadcast, never on the WAN side. The server picks the pool from the relay's address on that interface, which is why the pool's `network` must be the branch subnet and the server needs a route back to it.",
   },
 
   {

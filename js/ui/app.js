@@ -241,8 +241,8 @@ function variantTools(level) {
   if (!store.variantsOpen(origin.id)) return { note: "Solve this lab once and a New variant button appears here: the same skill with different addresses, names or faults, as often as you like." };
   return {
     actions: [h("button", { class: "btn small primary", onclick: fresh, title: "The same skill with different addresses, names or faults" }, "New variant")],
-    note: `You have solved this lab. New variant builds a random version of it, each worth up to ${origin.xp} XP again; press it as often as you like.`,
-    badge: h("span", { class: "tag done", title: "You have solved this lab before" }, "✓ Solved"),
+    note: `${store.isDone(origin.id) ? "You have solved this lab. " : ""}New variant builds a random version of it, each worth up to ${origin.xp} XP again; press it as often as you like.`,
+    badge: !store.isDone(origin.id) ? null : h("span", { class: "tag done", title: "You have solved this lab before" }, "✓ Solved"),
   };
 }
 

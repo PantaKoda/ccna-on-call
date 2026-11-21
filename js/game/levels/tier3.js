@@ -1,4 +1,5 @@
 import { C } from "../checks.js";
+import { floatingLab } from "../practice.js";
 
 const M24 = "255.255.255.0";
 const pc = (name, x, y, ip, gw) => ({ name, kind: "pc", x, y, ip: { mode: "static", ip, mask: M24, gw } });
@@ -100,6 +101,15 @@ export default [
       { on: "HQ-R1", cmds: ["enable", "configure terminal", "ip route 0.0.0.0 0.0.0.0 203.0.113.1", "ip route 192.168.50.0 255.255.255.0 10.0.0.2", "end", "write memory"] },
     ],
     debrief: "`show ip route` marks the default as `S*` and prints \"Gateway of last resort\". Routers always prefer the longest matching prefix, so the /24 to the branch beats the /0 default.",
+  },
+
+  {
+    id: "floating-backup", tier: 3, type: "lab", xp: 260, par: 780,
+    title: "Plan B",
+    from: "Dana Okafor, NOC Team Lead",
+    skills: ["floating static route", "administrative distance", "host route", "testing a failover"],
+    ...floatingLab({ site: "Riverside", br: 50, hq: 1, p: 1, b: 2, ad: 200, hostRoute: true }),
+    debrief: "The floating route was in the configuration the whole time, but `show ip route` only listed it while the main route was missing: the routing table holds the best route to each prefix, not every route you typed. The host route did not need a distance at all, because a /32 is always the longest match.",
   },
 
   {

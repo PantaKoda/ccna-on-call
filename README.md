@@ -9,9 +9,9 @@ It is a static web app (plain HTML, CSS and ES modules, no build step, no backen
 ## What is in it
 
 - **Two exam versions.** The first screen asks which blueprint you are studying for: **200-301 v1.1** (six domains) or **v2.0** (five domains). The topics, theory, exams and labs are then arranged by that blueprint's domains and weights. In v1.1, anything v2.0 dropped is marked **v1 exclusive**; in v2.0, new material is marked **New in v2**. Progress is shared and you can switch at any time.
-- **Two ways to browse.** *Career path*: 5 tiers, each harder than the last, with 18 hands-on labs (19 in v2.0), 2 subnetting drills and 5 promotion exams. *Topics*: the same content grouped into 26 topics under the exam's domains, each with a theory page, a quick check and its labs.
+- **Two ways to browse.** *Career path*: 5 tiers, each harder than the last, with 20 hands-on labs (21 in v2.0), 2 subnetting drills and 5 promotion exams. *Topics*: the same content grouped into 26 topics under the exam's domains, each with a theory page, a quick check and its labs.
 - **Theory first.** Every topic has a study page with the key ideas, the commands and the common mistakes. The same page opens in a side drawer during a lab.
-- **Random variants on demand.** After you solve a lab, a **New variant** button appears on it. Each press builds a new version of the same skill from a random seed: different addresses, VLAN numbers and names, and for troubleshooting a different fault. 17 of the 19 labs have variants (19 templates; some labs have a build version and a troubleshooting version). There is no schedule: you decide when and how often. Each solved variant earns the lab's XP again under the same star rules.
+- **Random variants on demand.** After you solve a lab, a **New variant** button appears on it. Each press builds a new version of the same skill from a random seed: different addresses, VLAN numbers and names, and for troubleshooting a different fault. 19 of the 21 labs have variants (22 templates; some labs have a build version and a troubleshooting version). There is no schedule: you decide when and how often. Each solved variant earns the lab's XP again under the same star rules.
 - **A network simulator** that runs in the browser: VLANs and trunks, router-on-a-stick, static and default routes, OSPF (adjacencies, costs, DR/BDR, passive interfaces, default origination), DHCP server and relay, NAT (PAT and static), standard and extended ACLs, SSH/Telnet access rules, port security.
 - **An IOS-style command line**: user/privileged/config modes, command abbreviation (`sh ip int br`), `?` help, Tab completion, `do`, `no` forms, `| include / exclude / begin / section`, console log messages (`%LINK-3-UPDOWN`, `%OSPF-5-ADJCHG`), and over thirty `show` commands.
 - **A PC command prompt**: `ipconfig`, `ping`, `tracert`, `ssh`, `telnet`, `curl`, plus an IP settings bar for static/DHCP addressing.
@@ -26,8 +26,8 @@ It is a static web app (plain HTML, CSS and ES modules, no build step, no backen
 | --- | --- | --- |
 | 1 Orientation Week | Intern | console modes, passwords and banners, subnetting, interface addressing, switch management IP |
 | 2 Access Layer | Junior Engineer | VLANs, trunks, router-on-a-stick, port security |
-| 3 Routing Rotation | Network Engineer | static routes, default routes, OSPF, OSPF troubleshooting |
-| 4 Services and Security | Senior Engineer | DHCP, NAT/PAT, extended ACLs, SSH hardening |
+| 3 Routing Rotation | Network Engineer | static routes, default routes, floating and host routes, OSPF, OSPF troubleshooting |
+| 4 Services and Security | Senior Engineer | DHCP, DHCP relay, NAT/PAT, extended ACLs, SSH hardening, Ansible (v2.0) |
 | 5 Incident Lead | Lead Engineer | a five-fault outage, a full branch build, the final exam |
 
 ## Run it locally
