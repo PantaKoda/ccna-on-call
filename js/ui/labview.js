@@ -1,6 +1,6 @@
 // The lab workspace: ticket + objectives, network map, device consoles.
 
-import { h, rich, fmtTime, toast } from "./dom.js";
+import { h, rich, fmtTime, toast, stars } from "./dom.js";
 import { Lab } from "../game/lab.js";
 import { isHost } from "../engine/network.js";
 import { ipToInt, intToIp, maskLen } from "../engine/ip.js";
@@ -10,8 +10,9 @@ import { openHandbook } from "./handbook.js";
 import { LEVEL_TOPIC, TOPIC_BY_ID } from "../game/topics.js";
 
 // `actions` are extra buttons for the ticket (the app adds "New variant" here),
-// `note` is a line of small print under them.
-export function mountLab(root, level, { onDone, actions = [], note = null }) {
+// `note` is a line of small print under them, `badge` goes beside the tier tag.
+// onDone(result) may return a short label (such as "+120 XP") for the Solved banner.
+export function mountLab(root, level, { onDone, actions = [], note = null, badge = null }) {
   let lab = new Lab(level);
   const topic = TOPIC_BY_ID.get(level.topic || LEVEL_TOPIC[level.id]);
   let hints = 0, solutionShown = false, start = Date.now(), finished = false;
@@ -22,8 +23,10 @@ export function mountLab(root, level, { onDone, actions = [], note = null }) {
   const hintBox = h("div", { class: "hints" });
   const hintBtn = h("button", { class: "btn small", onclick: askHint });
   const closeBtn = h("button", { class: "btn primary block", hidden: true, onclick: finish }, "Close ticket");
+  const solvedBox = h("div", { class: "solved-banner", role: "status", hidden: true });
   const ticket = h("div", { class: "win-body ticket" },
-    h("div", { class: "ticket-meta" }, h("span", { class: "tag" + (level.practice ? " practice" : "") }, level.practice ? "Variant" : `Tier ${level.tier}`), h("span", { class: "muted small" }, `From: ${level.from}`)),
+    solvedBox,
+    h("div", { class: "ticket-meta" }, h("span", { class: "tag" + (level.practice ? " practice" : "") }, level.practice ? "Variant" : `Tier ${level.tier}`), badge, h("span", { class: "muted small" }, `From: ${level.from}`)),
     h("h2", {}, level.subject),
     h("div", { class: "ticket-actions" },
       topic && h("button", { class: "btn small", onclick: () => openHandbook(topic.id), title: "Open the theory page for this topic without leaving the lab" }, `Theory: ${topic.name}`),
@@ -158,7 +161,7 @@ export function mountLab(root, level, { onDone, actions = [], note = null }) {
     prog.forEach((o, i) => { if (o.done && !lastDone[i]) toast("Objective complete: " + o.text.replace(/[`*]/g, ""), "ok"); });
     lastDone = prog.map(o => o.done);
     const all = prog.every(o => o.done);
-    closeBtn.hidden = !all;
+    closeBtn.hidden = !all || finished;
     if (all && !finished && !closeBtn.dataset.seen) { closeBtn.dataset.seen = "1"; closeBtn.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
     if (!all) delete closeBtn.dataset.seen;
 
@@ -179,7 +182,7 @@ export function mountLab(root, level, { onDone, actions = [], note = null }) {
   // ---- hints
   function renderHints() {
     const left = level.hints.length - hints;
-    hintBtn.hidden = solutionShown;
+    hintBtn.hidden = solutionShown || finished;
     hintBtn.textContent = left > 0 ? `Ask for a hint (${left} left, -1 star)` : "Show the full solution (1 star max)";
   }
   function askHint() {
@@ -216,7 +219,15 @@ export function mountLab(root, level, { onDone, actions = [], note = null }) {
     const seconds = Math.round((Date.now() - start) / 1000);
     let starCount = 3 - hints - (seconds > level.par ? 1 : 0);
     if (solutionShown) starCount = 1;
-    onDone({ stars: Math.max(1, starCount), seconds, hints, solutionShown, detail: [`${lab.commands} commands`, `${hints} hint${hints === 1 ? "" : "s"}`, seconds > level.par ? "over par time" : "within par time"] });
+    starCount = Math.max(1, starCount);
+    const label = onDone({ stars: starCount, seconds, hints, solutionShown, detail: [`${lab.commands} commands`, `${hints} hint${hints === 1 ? "" : "s"}`, seconds > level.par ? "over par time" : "within par time"] });
+    // leave the screen visibly solved for anyone who keeps exploring
+    root.querySelector(".workspace").classList.add("solved");
+    closeBtn.hidden = true;
+    hintBtn.hidden = true;
+    solvedBox.hidden = false;
+    solvedBox.replaceChildren(h("strong", {}, "\u2713 Solved"), stars(starCount), label ? h("span", { class: "solved-xp" }, label) : "", h("span", { class: "muted small" }, `in ${fmtTime(seconds)}`));
+    ticket.scrollTop = 0;
   }
 
   refresh();

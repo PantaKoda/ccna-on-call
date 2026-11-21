@@ -11,6 +11,8 @@ function load() {
   try {
     const data = Object.assign(fresh, JSON.parse(localStorage.getItem(KEY) || "{}"));
     delete data.skills;      // left over from the review queue of version 0.3
+    // version 0.4 kept only a count per lab
+    for (const [id, v] of Object.entries(data.variants)) if (typeof v === "number") data.variants[id] = { n: v, xp: 0 };
     return data;
   } catch { return fresh; }
 }
@@ -46,12 +48,14 @@ export const store = {
   },
 
   totals() {
-    let xp = 0, starCount = 0, done = 0;
+    let ticketXp = 0, starCount = 0, done = 0, variantXp = 0, variants = 0;
     for (const l of LEVELS) {
       const r = data.levels[l.id];
-      if (r) { xp += r.xp; starCount += r.stars; done++; }
+      if (r) { ticketXp += r.xp; starCount += r.stars; done++; }
     }
-    return { xp, stars: starCount, done, maxXp: LEVELS.reduce((a, l) => a + l.xp, 0), maxStars: LEVELS.length * 3, count: LEVELS.length };
+    for (const v of Object.values(data.variants)) { variantXp += v.xp; variants += v.n; }
+    // xp is everything earned; ticketXp out of maxXp is progress through the career path
+    return { xp: ticketXp + variantXp, ticketXp, variantXp, variants, stars: starCount, done, maxXp: LEVELS.reduce((a, l) => a + l.xp, 0), maxStars: LEVELS.length * 3, count: LEVELS.length };
   },
 
   // Rank follows the highest tier you have fully cleared.
@@ -68,8 +72,16 @@ export const store = {
   // ---------------------------------------------------------- random variants
   // A lab's variants open once its original has been solved.
   variantsOpen: levelId => unlockAll || store.isDone(levelId),
-  variantCount: levelId => data.variants[levelId] || 0,
-  variantSolved(levelId) { data.variants[levelId] = (data.variants[levelId] || 0) + 1; save(); return data.variants[levelId]; },
+  variantStats: levelId => data.variants[levelId] || { n: 0, xp: 0 },
+  // Every solved variant earns the lab's points again, by the same star rules
+  // as the original. Returns { n, xp, gained }.
+  variantSolved(level, starCount) {
+    const v = data.variants[level.id] || { n: 0, xp: 0 };
+    const gained = store.xpFor(level, starCount);
+    data.variants[level.id] = { n: v.n + 1, xp: v.xp + gained };
+    save();
+    return { ...data.variants[level.id], gained };
+  },
 
   // ---------------------------------------------------------- topics and exams
   isStudied: topic => !!data.studied[topic],

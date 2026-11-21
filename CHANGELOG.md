@@ -4,6 +4,17 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- Every solved variant now earns points. A variant is worth the same XP as its original lab under the same rules: full points with no hints and inside the par time, less otherwise. Each new variant can earn them again.
+- A solved lab or variant is clearly marked. The ticket gets a green "Solved" banner with your stars, the XP earned and your time, the ticket window turns green, and the top bar shows a "Solved" tag. This stays if you keep exploring the lab.
+- Opening a lab you solved before shows a "Solved" tag on its ticket.
+
+### Changed
+
+- Home cards for solved labs have a green outline and say "Solved", with a second line for the variants you solved and the XP they earned.
+- The progress bar on the home screen now tracks the career path only (XP from tickets). XP from variants is added to your total and shown separately, so the bar can no longer overflow.
+
 ## [0.4.0] - 2026-11-21
 
 ### Changed

@@ -401,3 +401,15 @@ a.side-link:hover { border-color: var(--accent); }
   .study-wrap { grid-template-columns: minmax(0, 1fr); }
   .study-side { position: static; }
 }
+
+/* ---------- solved state ---------- */
+.tag.done { color: var(--green); border-color: color-mix(in srgb, var(--green) 55%, transparent); background: color-mix(in srgb, var(--green) 12%, transparent); }
+.solved-banner { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin: -2px 0 12px; padding: 10px 12px; border: 1px solid var(--green); border-left-width: 4px; border-radius: 8px; background: color-mix(in srgb, var(--green) 12%, transparent); }
+.solved-banner strong { color: var(--green); font-size: 15px; }
+.solved-xp { font: 700 14px var(--mono); color: var(--accent); }
+.workspace.solved .win-ticket { border-color: var(--green); box-shadow: 0 0 0 1px var(--green), 0 10px 30px var(--shadow); }
+.workspace.solved .win-ticket .win-title { background: color-mix(in srgb, var(--green) 14%, var(--panel-2)); }
+.card.done { border-color: color-mix(in srgb, var(--green) 50%, var(--line)); }
+.solved-mark { color: var(--green); font-weight: 700; font-family: var(--sans); }
+.variant-line { display: block; margin-top: 2px; font-family: var(--sans); }
+.variant-line.on { color: var(--green); font-weight: 600; }

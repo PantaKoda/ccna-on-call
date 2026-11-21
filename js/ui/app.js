@@ -29,7 +29,7 @@ function renderTopbar(where) {
     h("a", { class: "brand", href: "#/", "aria-label": "CCNA: On Call, back to the home screen" },
       h("span", { class: "brand-mark", "aria-hidden": "true" }, h("i"), h("i"), h("i")), h("span", {}, "CCNA: ", h("b", {}, "On Call"))),
     where ? h("a", { class: "btn ghost small", href: "#/" }, "← Home") : null,
-    where ? h("span", { class: "top-title" }, h("span", { class: "tag" }, where.tag), where.title) : h("span", { class: "top-title muted" }, "Kestrel Freight · Network Operations"),
+    where ? h("span", { class: "top-title" }, h("span", { class: "tag" + (where.solved ? " done" : "") }, where.tag), where.title) : h("span", { class: "top-title muted" }, "Kestrel Freight · Network Operations"),
     h("span", { class: "spacer" }),
     h("span", { class: "top-rank", title: "Your rank" }, r.rank),
     h("span", { class: "top-xp" }, `${t.xp} XP`),
@@ -67,7 +67,7 @@ function renderHome() {
 
 function hero() {
   const t = store.totals(), r = store.rank(), next = store.nextLevel();
-  const pct = Math.round((t.xp / t.maxXp) * 100);
+  const pct = Math.round((t.ticketXp / t.maxXp) * 100);
   return h("section", { class: "hero" },
     h("div", { class: "hero-main" },
       h("p", { class: "eyebrow" }, "Your rank"),
@@ -75,8 +75,9 @@ function hero() {
       h("p", { class: "muted" }, next
         ? "You're the on-call engineer. Study a topic, then work its tickets on a simulated network. Once you have solved a lab, open it again for a random variant whenever you want more practice."
         : "Every ticket closed. Open any lab again for a fresh random variant."),
-      h("div", { class: "xpbar", role: "progressbar", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100, "aria-label": "Experience" }, h("i", { style: `width:${pct}%` })),
-      h("p", { class: "muted small" }, `${t.xp} / ${t.maxXp} XP · ${t.done} of ${t.count} tickets closed · ${t.stars} of ${t.maxStars} stars`)),
+      h("div", { class: "xpbar", role: "progressbar", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100, "aria-label": "Career path progress" }, h("i", { style: `width:${pct}%` })),
+      h("p", { class: "muted small" }, `${t.done} of ${t.count} tickets closed · ${t.stars} of ${t.maxStars} stars · ${t.ticketXp} / ${t.maxXp} XP from tickets`,
+        t.variants ? ` · ${t.variantXp} XP from ${t.variants} variant${t.variants > 1 ? "s" : ""}` : "")),
     next && h("a", { class: "btn primary big", href: `#/play/${next.id}` }, t.done ? "Next ticket" : "Start your first ticket", h("span", { class: "btn-sub" }, next.title)));
 }
 
@@ -111,13 +112,14 @@ function careerView() {
 function levelCard(l, next, showTopic = true) {
   const res = store.result(l.id), open = store.isUnlocked(l.id);
   const topic = TOPIC_BY_ID.get(LEVEL_TOPIC[l.id]);
-  const hasVariants = l.type === "lab" && variantsOf(l.id).length > 0, solved = store.variantCount(l.id);
+  const hasVariants = l.type === "lab" && variantsOf(l.id).length > 0, vs = store.variantStats(l.id);
   const inner = [
     h("div", { class: "card-top" }, h("span", { class: "tag " + l.type }, TYPE[l.type]), h("span", { class: "spacer" }),
       res ? stars(res.stars) : open ? h("span", { class: "muted small" }, `${l.xp} XP`) : h("span", { class: "lock", "aria-hidden": "true" }, "🔒")),
     h("h3", {}, l.title),
     h("p", { class: "muted small" }, l.subject),
-    res ? h("p", { class: "card-foot small" }, `${res.xp} / ${l.xp} XP · best ${fmtTime(res.best)}`, hasVariants ? ` · ${solved ? `${solved} variant${solved > 1 ? "s" : ""} solved` : "variants open"}` : "")
+    res ? h("p", { class: "card-foot small" }, h("span", { class: "solved-mark" }, "✓ Solved"), ` · ${res.xp} / ${l.xp} XP · best ${fmtTime(res.best)}`,
+      hasVariants ? h("span", { class: vs.n ? "variant-line on" : "variant-line" }, vs.n ? `✓ ${vs.n} variant${vs.n > 1 ? "s" : ""} solved · +${vs.xp} XP` : "Variants open") : null)
       : next && next.id === l.id ? h("p", { class: "card-foot small next" }, "Next up")
       : topic && showTopic ? h("p", { class: "card-foot small" }, topic.name) : null,
   ];
@@ -197,13 +199,14 @@ function variantTools(level) {
     return {
       actions: [h("button", { class: "btn small primary", onclick: fresh, title: "Throw this one away and build a different random variant" }, "New variant"),
         h("button", { class: "btn small", onclick: () => nav(`#/play/${origin.id}`) }, "Original lab")],
-      note: `A random variant of "${origin.title}". ${store.variantCount(origin.id)} solved so far.`,
+      note: `A random variant of "${origin.title}", worth up to ${origin.xp} XP like the original: all of it with no hints and inside the par time.`,
     };
   }
   if (!store.variantsOpen(origin.id)) return { note: "Solve this lab once and a New variant button appears here: the same skill with different addresses, names or faults, as often as you like." };
   return {
     actions: [h("button", { class: "btn small primary", onclick: fresh, title: "The same skill with different addresses, names or faults" }, "New variant")],
-    note: "You have solved this lab. New variant builds a random version of it; press it as often as you like.",
+    note: `You have solved this lab. New variant builds a random version of it, each worth up to ${origin.xp} XP again; press it as often as you like.`,
+    badge: h("span", { class: "tag done", title: "You have solved this lab before" }, "✓ Solved"),
   };
 }
 
@@ -230,7 +233,7 @@ function showResult(level, res) {
   const revisit = (res.review || []).map(id => TOPIC_BY_ID.get(id)).filter(Boolean);
   const revisitLine = revisit.length ? h("p", { class: "small" }, "Worth revisiting: ", revisit.map((t, i) => [i ? ", " : "", h("a", { href: `#/study/${t.id}`, onclick: close }, t.name)])) : null;
   const explore = h("button", { class: "btn ghost", onclick: close }, "Keep exploring this lab");
-  let body;
+  let body, label = "";
 
   if (res.check) {
     body = [
@@ -241,13 +244,15 @@ function showResult(level, res) {
       h("div", { class: "actions" }, btn("Another round", `#/check/${topic.id}`, "primary"), btn("Study the theory", `#/study/${topic.id}`), btn("Back to topics", "#/")),
     ];
   } else if (level.practice) {
-    const n = store.variantSolved(level.origin);
     const origin = LEVEL_BY_ID.get(level.origin);
+    const v = store.variantSolved(origin, res.stars);
+    label = `+${v.gained} XP`;
     body = [
       h("p", { class: "eyebrow" }, "Variant solved"), h("h2", {}, level.title),
       h("div", { class: "result-stars" }, stars(res.stars)),
+      h("p", { class: "result-xp" }, label, v.gained < origin.xp ? h("span", { class: "muted small" }, ` of ${origin.xp} (full points need no hints and the par time)`) : h("span", { class: "muted small" }, " full points")),
       h("p", { class: "muted" }, `${fmtTime(res.seconds)} · ${res.detail.join(" · ")}`),
-      h("p", { class: "small" }, `That is ${n} variant${n > 1 ? "s" : ""} of "${origin.title}" solved.`),
+      h("p", { class: "small" }, `That is ${v.n} variant${v.n > 1 ? "s" : ""} of "${origin.title}" solved, ${v.xp} XP in total.`),
       h("div", { class: "actions" }, btn("New variant", `#/variant/${origin.id}`, "primary"), btn("Original lab", `#/play/${origin.id}`), btn("Back to home", "#/"), explore),
     ];
   } else {
@@ -255,6 +260,7 @@ function showResult(level, res) {
     const passed = res.stars > 0;
     const firstTime = passed && !store.isDone(level.id);
     const gained = passed ? store.record(level, res.stars, res.seconds) : 0;
+    if (passed) label = `+${gained} XP`;
     const after = store.rank().rank;
     const next = LEVELS[LEVELS.indexOf(level) + 1];
     const hasVariants = passed && level.type === "lab" && variantsOf(level.id).length > 0;
@@ -281,6 +287,10 @@ function showResult(level, res) {
   const overlay = h("div", { class: "overlay", role: "dialog", "aria-modal": "true", "aria-label": "Result" }, h("div", { class: "modal" }, body));
   document.body.append(overlay);
   overlay.querySelector("button").focus();
+  // refresh the top bar: new XP total, and a Solved tag for a finished lab
+  if (level.type === "lab" && res.stars > 0) renderTopbar({ tag: "Solved", title: level.title, solved: true });
+  else renderTopbar({ tag: level.check ? "Check" : TYPE[level.type], title: level.title });
+  return label;
 }
 
 // ------------------------------------------------------------ routing
