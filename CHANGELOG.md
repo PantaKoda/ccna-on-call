@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-21
+
 ### Changed
 
 - Random variants are now on demand. Once you have solved a lab, a **New variant** button appears on it; each press builds a fresh random version of that lab (different addresses, names, or a different fault), as many times as you like. Inside a variant, "Original lab" takes you back.
