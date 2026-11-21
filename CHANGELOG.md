@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-21
+
 ### Added
 
 - Light mode. A button in the top bar switches between light and dark; the choice is remembered, and until you choose, the game follows your system setting.
