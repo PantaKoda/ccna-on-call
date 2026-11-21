@@ -19,6 +19,16 @@ function load() {
 const data = load();
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { /* storage unavailable */ } };
 
+// Tickets closed before the review queue existed: queue their skills now, due
+// straight away, so earlier progress is not left out of the reviews.
+{
+  let added = false;
+  for (const s of SKILLS) {
+    if (s.after && data.levels[s.after] && !data.skills[s.id]) { data.skills[s.id] = { box: 0, due: Date.now(), reps: 0 }; added = true; }
+  }
+  if (added) save();
+}
+
 const unlockAll = new URLSearchParams(location.search).get("unlock") === "all";
 const skillsOf = topic => SKILLS.filter(s => s.topic === topic);
 

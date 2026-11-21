@@ -4,6 +4,10 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Fixed
+
+- Tickets you closed before version 0.3.0 now count for the review queue: their skills are queued the next time you open the game, due straight away.
+
 ## [0.3.0] - 2026-11-21
 
 ### Added
