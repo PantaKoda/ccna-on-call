@@ -11,7 +11,7 @@
 
 import { h, toast } from "./dom.js";
 import { createSpace, PLANETS } from "./space.js";
-import { createSpaceGL } from "./spacegl.js";
+import { createSpaceGL, GL_PLANETS } from "./spacegl.js";
 import { music, MOODS } from "./music.js";
 
 const KEY = "ccna-on-call-cockpit";
@@ -19,7 +19,7 @@ const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion:
 const ROLL = { gentle: 1, cinematic: 3.5, hold: 0 };
 const prefs = Object.assign({
   music: false, source: "ambient", volume: 0.45, mood: "orbit", shuffle: false,
-  roll: reduced ? "hold" : "gentle", planet: "ochre", glass: 0.74, canopy: true, graphics: "full",
+  roll: reduced ? "hold" : "gentle", planet: "kestrel", glass: 0.74, canopy: true, graphics: "full",
 }, read());
 if (prefs.motion === false && !read().roll) prefs.roll = "hold";     // saved by an earlier version
 function read() { try { return JSON.parse(localStorage.getItem(KEY) || "{}"); } catch { return {}; } }
@@ -287,7 +287,7 @@ function drawPanel() {
     h("section", { class: "ck-sec" },
       h("span", { class: "ck-label" }, "View outside"),
       h("div", { class: "ck-field" }, h("span", { class: "muted small" }, "Planet"),
-        chips(Object.entries(PLANETS).map(([id, p]) => [id, p.name]), prefs.planet, id => { prefs.planet = id; save(); if (space) space.setPlanet(id); drawPanel(); }, "planet")),
+        chips(Object.entries(gpu ? { ...GL_PLANETS, ...PLANETS } : PLANETS).map(([id, p]) => [id, p.name]), gpu || prefs.planet in PLANETS ? prefs.planet : "ochre", id => { prefs.planet = id; save(); if (space) space.setPlanet(id); drawPanel(); }, "planet")),
       h("div", { class: "ck-field" }, h("span", { class: "muted small" }, prefs.graphics === "full" && !gpu ? "Graphics (this browser has no WebGL 2, so the light view is shown)" : "Graphics"),
         pills([["full", "Full (GPU)"], ["light", "Light"]], prefs.graphics, id => { prefs.graphics = id; save(); if (bg) startView(); drawPanel(); }, "graphics")),
       h("div", { class: "ck-field" }, h("span", { class: "muted small" }, "Orbit roll"),

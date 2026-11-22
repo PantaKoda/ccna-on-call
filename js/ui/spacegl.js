@@ -5,9 +5,10 @@
 // shadow on the planet and the planet on the rings, the atmosphere glows at the
 // edge, and the sun blooms through a camera lens.
 //
-// Textures: the sky's nebulae and the planet's clouds are generated on the GPU
-// when the view starts. A texture made in Blender can replace either (ASSETS
-// below); until one is listed there, nothing is downloaded.
+// Textures: the sky, the moon and two of the planets come from images made in
+// Blender (content/space/, rendered by tools/blender/space_textures.py). The
+// other planets' clouds are generated on the GPU, and so is everything else
+// until its image has loaded.
 //
 //   const space = createSpaceGL(canvas, { rate: 1, planet: "ochre", onTick });
 //   space.setRate(0); space.setPlanet("ice"); space.destroy();
@@ -16,11 +17,16 @@
 
 import { PLANETS } from "./space.js";
 
-// Image files that replace generated textures, relative to index.html.
-// sky: an equirectangular (2:1) image of the sky, north at the top.
-// planets.<id>: map (2:1 cloud map) and ring (a strip, inner edge on the left,
-// with alpha) for a planet; a planet with a map is added to the Bridge's list.
-export const ASSETS = { sky: null, planets: {} };
+// Images made in Blender, relative to index.html. sky and moon are 2:1
+// equirectangular maps, north at the top.
+export const ASSETS = { sky: "content/space/sky.webp", moon: "content/space/moon.webp" };
+
+// Planets painted in Blender: a 2:1 cloud map and a ring strip (inner edge on
+// the left, alpha = how dense). They are only on the Full graphics list.
+export const GL_PLANETS = {
+  kestrel: { name: "Kestrel Prime", map: "content/space/kestrel.webp", ring: "content/space/kestrel-ring.png", atm: [255, 200, 150], base: "ochre" },
+  cryon: { name: "Cryon", map: "content/space/cryon.webp", ring: "content/space/cryon-ring.png", atm: [130, 205, 255], base: "ice" },
+};
 
 const TAU = Math.PI * 2;
 const SPIN_PERIOD = 600;          // seconds for the ship to roll once
@@ -40,7 +46,13 @@ const WORLD = (() => {
   const pc = [Math.sin(off) * Math.cos(az) * dist, Math.sin(off) * Math.sin(az) * dist, -Math.cos(off) * dist];
   const n = norm([0.3, 0.92, 0.25]);                 // the planet's axis; the rings lie in its equator
   const t = norm(cross(n, [0, 0, 1])), b = cross(t, n);
-  return { pc, r: 4, n, t, b, sun: norm([0.62, 0.38, -0.69]), ringIn: 1.3, ringOut: 2.3, moonOrbit: 6.6, moonR: 0.17 };
+  // The sun: the planet's direction turned 118 degrees past the view's centre,
+  // then lifted a little. The planet's side toward the screen's middle is lit
+  // and the line between day and night runs across what we see of it.
+  const pd = norm(pc), k = norm(cross(pd, [0, 0, -1])), th = deg(118), lift = 0.18;
+  const rot = cross(k, pd).map((c, i) => pd[i] * Math.cos(th) + c * Math.sin(th));
+  const sun = norm([rot[0], rot[1] + lift, rot[2]]);
+  return { pc, r: 4, n, t, b, sun, ringIn: 1.3, ringOut: 2.3, moonOrbit: 6.6, moonR: 0.17 };
 })();
 
 // ---------------------------------------------------------------- shaders
@@ -129,7 +141,8 @@ uniform vec2 uRes; uniform float uTime, uTan, uPx, uSunI, uSpin, uSkyGain;
 uniform mat3 uCam;
 uniform vec3 uPc, uN, uT, uB, uL, uAtmo, uMoon;
 uniform float uR, uRingIn, uRingOut, uMoonR;
-uniform sampler2D uSky, uPlanet, uRing;
+uniform sampler2D uSky, uPlanet, uRing, uMoonTex;
+uniform float uMoonHas;
 
 float ringAlpha(float r) { float x = (r - uRingIn) / (uRingOut - uRingIn); return (x < 0.0 || x > 1.0) ? 0.0 : texture(uRing, vec2(x, 0.5)).a; }
 
@@ -210,8 +223,9 @@ vec4 rings(vec3 rd, out float t) {
 
 vec3 moon(vec3 rd, vec3 p) {
   vec3 n = normalize(p - uMoon);
-  float cr = fbm(n * 5.0), mare = smoothstep(0.45, 0.6, fbm(n * 1.6 + 3.0));
-  vec3 alb = mix(vec3(0.42), vec3(0.24, 0.24, 0.26), mare) * (0.75 + 0.5 * cr);
+  vec3 alb;
+  if (uMoonHas > 0.5) alb = pow(texture(uMoonTex, vec2(fract(atan(n.x, n.z) / TAU + 0.5), asin(clamp(n.y, -1.0, 1.0)) / PI + 0.5)).rgb, vec3(2.2)) * 1.3;
+  else { float cr = fbm(n * 5.0), mare = smoothstep(0.45, 0.6, fbm(n * 1.6 + 3.0)); alb = mix(vec3(0.42), vec3(0.24, 0.24, 0.26), mare) * (0.75 + 0.5 * cr); }
   float ndl = max(dot(n, uL), 0.0);
   return alb * ndl * uSunI + alb * 0.02 * max(dot(n, normalize(uPc - uMoon)), 0.0);   // a little planetshine
 }
@@ -368,11 +382,26 @@ export function createSpaceGL(canvas, opts = {}) {
   draw(P.sky, skyT.fb, 2048, 1024);
   let skyTex = skyT.tex;
   const planetT = target(gl, 4096, 2048, false);
-  let planetTex = planetT.tex, ringTex = texture(gl, 1024, 1, { data: ringStrip() });
+  let planetTex = planetT.tex, ringTex = null;
 
-  let rate = opts.rate ?? 1, kind = opts.planet in PLANETS ? opts.planet : "ochre", look = [0, 0], lookTo = [0, 0];
-  let atmo = [1, 0.75, 0.55];
+  const known = id => id in PLANETS || id in GL_PLANETS;
+  let rate = opts.rate ?? 1, kind = known(opts.planet) ? opts.planet : "kestrel", look = [0, 0], lookTo = [0, 0];
+  let atmo = [1, 0.75, 0.55], moonTex = null;
+  const genRing = texture(gl, 1024, 1, { data: ringStrip() });
+  // a Blender planet shows its generated cousin until its images have loaded
   function makePlanet(id) {
+    const own = GL_PLANETS[id];
+    ringTex = genRing;
+    generate(own ? own.base : id);
+    if (own) {
+      atmo = own.atm.map(v => (v / 255) * 0.9);
+      Promise.all([loadImage(own.map), loadImage(own.ring)]).then(([m, r]) => {
+        if (kind !== id) return;
+        planetTex = upload(m, gl.REPEAT); ringTex = upload(r, gl.CLAMP_TO_EDGE); run();
+      }).catch(e => console.warn(e.message));
+    }
+  }
+  function generate(id) {
     const pl = PLANETS[id] || PLANETS.ochre, u = P.planet.u;
     gl.useProgram(P.planet.p);
     gl.uniform4fv(u("uPal"), new Float32Array(pl.pal.flatMap(([t, r, g, b]) => [t, r / 255, g / 255, b / 255])));
@@ -382,6 +411,16 @@ export function createSpaceGL(canvas, opts = {}) {
     draw(P.planet, planetT.fb, 4096, 2048);
     planetTex = planetT.tex;
     atmo = pl.atm.map(v => (v / 255) * 0.9);
+  }
+  function upload(img, wrap) {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
   }
   makePlanet(kind);
 
@@ -438,13 +477,14 @@ export function createSpaceGL(canvas, opts = {}) {
     const moon = w.pc.map((c, i) => c + ma * (Math.cos(th) * w.t[i] + Math.sin(th) * w.b[i]) + w.n[i] * 0.6);
     gl.useProgram(s.p);
     gl.uniform2f(u("uRes"), W, H); gl.uniform1f(u("uTime"), clock); gl.uniform1f(u("uTan"), tan);
-    gl.uniform1f(u("uPx"), (2 * tan) / H); gl.uniform1f(u("uSunI"), 1.45); gl.uniform1f(u("uSkyGain"), 1.6);
+    gl.uniform1f(u("uPx"), (2 * tan) / H); gl.uniform1f(u("uSunI"), 1.2); gl.uniform1f(u("uSkyGain"), 1.6);
     gl.uniform1f(u("uSpin"), (clock * TAU) / PLANET_DAY);
     gl.uniformMatrix3fv(u("uCam"), false, m);
     gl.uniform3fv(u("uPc"), w.pc); gl.uniform3fv(u("uN"), w.n); gl.uniform3fv(u("uT"), w.t); gl.uniform3fv(u("uB"), w.b);
     gl.uniform3fv(u("uL"), w.sun); gl.uniform3fv(u("uAtmo"), atmo); gl.uniform3fv(u("uMoon"), moon);
     gl.uniform1f(u("uR"), w.r); gl.uniform1f(u("uRingIn"), w.ringIn); gl.uniform1f(u("uRingOut"), w.ringOut); gl.uniform1f(u("uMoonR"), w.moonR);
     bind(u("uSky"), 0, skyTex); bind(u("uPlanet"), 1, planetTex); bind(u("uRing"), 2, ringTex);
+    bind(u("uMoonTex"), 3, moonTex || ringTex); gl.uniform1f(u("uMoonHas"), moonTex ? 1 : 0);
     draw(s, scene.fb, W, H);
 
     // bloom: the bright parts, blurred at a quarter and an eighth of the size
@@ -470,25 +510,10 @@ export function createSpaceGL(canvas, opts = {}) {
     bind(bl.u("uTex"), 0, a.tex); gl.uniform2f(bl.u("uDir"), 0, 1 / a.h); draw(bl, b.fb, b.w, b.h);
   }
 
-  // Blender-made textures, when ASSETS lists them
-  async function loadAssets() {
-    const up = (img, wrap) => {
-      const t = gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, t);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      return t;
-    };
-    try { if (ASSETS.sky) { skyTex = up(await loadImage(ASSETS.sky), gl.REPEAT); run(); } } catch (e) { console.warn(e.message); }
-    const own = ASSETS.planets[kind];
-    try {
-      if (own && own.map) planetTex = up(await loadImage(own.map), gl.REPEAT);
-      if (own && own.ring) ringTex = up(await loadImage(own.ring), gl.CLAMP_TO_EDGE);
-      run();
-    } catch (e) { console.warn(e.message); }
+  // the sky and the moon from Blender, once they have loaded
+  function loadAssets() {
+    loadImage(ASSETS.sky).then(img => { skyTex = upload(img, gl.REPEAT); run(); }).catch(e => console.warn(e.message));
+    loadImage(ASSETS.moon).then(img => { moonTex = upload(img, gl.REPEAT); run(); }).catch(e => console.warn(e.message));
   }
 
   function run() { if (!raf) { prev = performance.now(); raf = requestAnimationFrame(frame); } }
@@ -503,7 +528,7 @@ export function createSpaceGL(canvas, opts = {}) {
 
   return {
     setRate(r) { rate = Math.max(0, +r || 0); if (!rate) lookTo = [0, 0]; run(); },
-    setPlanet(id) { if (!(id in PLANETS) || id === kind) return; kind = id; makePlanet(id); loadAssets(); run(); },
+    setPlanet(id) { if (!known(id) || id === kind) return; kind = id; makePlanet(id); run(); },
     destroy() {
       cancelAnimationFrame(raf); raf = 0; clearTimeout(resizeTimer);
       window.removeEventListener("resize", onResize); window.removeEventListener("pointermove", onPointer);
