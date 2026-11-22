@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-22
+
 Follows a second review of the material.
 
 ### Fixed
