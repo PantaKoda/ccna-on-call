@@ -472,6 +472,87 @@ export function channelLab({ site, vlans, ports, group, fault }) {
   };
 }
 
+// ---------------------------------------------------------------- OSPF tuning
+// Four routers that already run OSPF. CORE1, CORE2 and EDGE share the core LAN,
+// so that LAN holds a DR election. DIST reaches CORE1 over gigabit and EDGE
+// directly over old 100 Mb/s copper, which OSPF prefers until the costs are fixed.
+//   steer "ref"   raise the reference bandwidth on every router
+//   steer "cost"  put a fixed cost on the copper link
+//   dr            which core router should become the designated router
+export function ospfTuneLab({ site, office, servers, core, links, steer, ref, cost, dr }) {
+  const want = dr, other = dr === "CORE1" ? "CORE2" : "CORE1";
+  const lanO = `10.${office}.0`, lanS = `10.${servers}.0`, lanC = `10.0.${core}`, up = `10.255.${links[0]}`, old = `10.255.${links[1]}`;
+  const srv = `${lanS}.10`, W24 = "0.0.0.255", W30 = "0.0.0.3", P2P = "ip ospf network point-to-point";
+  const all = ["CORE1", "CORE2", "EDGE", "DIST"];
+  // the router that should end up in charge starts with the lowest router ID, so at first it holds no role at all
+  const rid = { [want]: "1.1.1.1", [other]: "2.2.2.2", EDGE: "3.3.3.3", DIST: "4.4.4.4" };
+  const ospf = (name, nets, passive) => ["router ospf 1", `router-id ${rid[name]}`, ...nets.map(([n, w]) => `network ${n}.0 ${w} area 0`), ...(passive ? [`passive-interface ${passive}`] : [])];
+  const withFa = ["GigabitEthernet0/0", "GigabitEthernet0/1", "FastEthernet0/0"];
+  const priority = (net, dev) => net.devs[dev].ifaces["GigabitEthernet0/0"].ospfPri ?? 1;
+
+  const refCmds = steer === "ref" ? ["router ospf 1", `auto-cost reference-bandwidth ${ref}`] : [];
+  const costCmd = steer === "cost" ? [`ip ospf cost ${cost}`] : [];
+  const top = ["interface g0/0", "ip ospf priority 200"];
+  const fix = {
+    CORE1: [...refCmds, "interface g0/1", P2P, ...(want === "CORE1" ? top : [])],
+    CORE2: [...refCmds, ...(want === "CORE2" ? top : [])],
+    EDGE: [...refCmds, "interface fa0/0", P2P, ...costCmd, "interface g0/0", "ip ospf priority 0"],
+    DIST: [...refCmds, "interface g0/1", P2P, "interface fa0/0", P2P, ...costCmd],
+  };
+  const touched = all.filter(d => fix[d].length);
+
+  return {
+    subject: "Three things to tidy after the OSPF migration",
+    brief: [
+      `OSPF has been running at ${site} for a week, and the graphs show three things to tidy. Nothing is down, so look before you change anything.`,
+      `**1. The slow link is doing the work.** The office (behind DIST) reaches the servers (behind EDGE) over the old 100 Mb/s copper link, while the gigabit path through CORE1 sits idle. ${steer === "ref"
+        ? `OSPF gives both speeds the same cost. Fix that at the root: set the reference bandwidth to **${ref}** on every router.`
+        : `Keep that link as a backup only: give it an OSPF cost of **${cost}** at both ends.`}`,
+      "**2. Two-router links should not hold elections.** Each link from DIST joins exactly two routers. Make both of them point-to-point, at both ends.",
+      `**3. The wrong router is in charge of the core LAN.** EDGE, the oldest router on site, is the designated router. **${want}** should hold that role with ${other} as its backup, and EDGE should never be elected.`,
+    ],
+    details: [["Core LAN (G0/0)", `${lanC}.0/24: CORE1 .1, CORE2 .2, EDGE .3`], ["DIST to CORE1", `${up}.0/30, gigabit, G0/1 at both ends`], ["DIST to EDGE", `${old}.0/30, 100 Mb/s copper, Fa0/0 at both ends`],
+      ["Office", `${lanO}.0/24 on DIST G0/0 (PC-A is .10)`], ["Servers", `${lanS}.0/24 on EDGE G0/1 (SRV is .10)`], ["OSPF", "Process 1, area 0, already running on all four routers"]],
+    topology: {
+      devices: [
+        { name: "CORE-SW", kind: "switch", hostname: "CORE-SW", x: 500, y: 200, note: "Core LAN", ports: ["GigabitEthernet0/1", "GigabitEthernet0/2", "GigabitEthernet0/3", "GigabitEthernet0/4"] },
+        { name: "CORE1", kind: "router", hostname: "CORE1", x: 270, y: 200, config: [...ifc("g0/0", `${lanC}.1`, M24), ...ifc("g0/1", `${up}.1`, M30), ...ospf("CORE1", [[lanC, W24], [up, W30]])] },
+        { name: "CORE2", kind: "router", hostname: "CORE2", x: 500, y: 80, config: [...ifc("g0/0", `${lanC}.2`, M24), ...ospf("CORE2", [[lanC, W24]])] },
+        { name: "EDGE", kind: "router", hostname: "EDGE", x: 730, y: 200, note: "Oldest router on site", ports: withFa,
+          config: [...ifc("g0/0", `${lanC}.3`, M24), ...ifc("g0/1", `${lanS}.1`, M24), ...ifc("fa0/0", `${old}.2`, M30), ...ospf("EDGE", [[lanC, W24], [lanS, W24], [old, W30]], "g0/1")] },
+        { name: "DIST", kind: "router", hostname: "DIST", x: 270, y: 400, ports: withFa,
+          config: [...ifc("g0/0", `${lanO}.1`, M24), ...ifc("g0/1", `${up}.2`, M30), ...ifc("fa0/0", `${old}.1`, M30), ...ospf("DIST", [[lanO, W24], [up, W30], [old, W30]], "g0/0")] },
+        pc("PC-A", 100, 400, `${lanO}.10`, M24, `${lanO}.1`),
+        { name: "SRV", kind: "server", x: 900, y: 200, note: "Servers", services: ["http"], ip: { mode: "static", ip: srv, mask: M24, gw: `${lanS}.1` } },
+      ],
+      links: ["CORE1:g0/0 CORE-SW:g0/1", "CORE2:g0/0 CORE-SW:g0/2", "EDGE:g0/0 CORE-SW:g0/3", "DIST:g0/1 CORE1:g0/1", "DIST:fa0/0 EDGE:fa0/0", "DIST:g0/0 PC-A", "EDGE:g0/1 SRV"],
+    },
+    objectives: [
+      steer === "ref"
+        ? { text: `All four routers use a reference bandwidth of ${ref} Mb/s`, check: C.ospfRef(all, ref) }
+        : { text: `The copper link (Fa0/0) has OSPF cost ${cost} on DIST and on EDGE`, check: C.all(C.ospfCost("DIST", "fa0/0", cost), C.ospfCost("EDGE", "fa0/0", cost)) },
+      { text: "Office and servers talk through CORE1: DIST and EDGE both route that way", check: C.all(C.routeVia("DIST", srv, `${up}.1`, 24), C.routeVia("EDGE", `${lanO}.10`, `${lanC}.1`, 24)) },
+      { text: "Both links from DIST are point-to-point at each end (the neighbours show FULL/ -)", check: C.all(C.ospfP2p("DIST", "g0/1"), C.ospfP2p("CORE1", "g0/1"), C.ospfP2p("DIST", "fa0/0"), C.ospfP2p("EDGE", "fa0/0")) },
+      { text: `On the core LAN, EDGE has priority 0 and ${want} has a higher priority than ${other}`, check: net => priority(net, "EDGE") === 0 && priority(net, want) > priority(net, other) && priority(net, other) > 0 },
+      { text: `${want} is the designated router of the core LAN and ${other} is the backup`, check: C.all(C.ospfRole(want, "g0/0", "DR"), C.ospfRole(other, "g0/0", "BDR")) },
+      { text: "PC-A still reaches the server (ping and HTTP)", check: C.all(C.ping("PC-A", srv), C.tcp("PC-A", srv, 80)) },
+      { text: "Every router you changed is saved", check: C.savedIfChanged(all) },
+    ],
+    hints: [
+      `Look first. On DIST, \`show ip route\` shows which neighbour leads to the server LAN, and \`show ip ospf interface brief\` shows what each interface costs: with the default reference bandwidth, FastEthernet and gigabit both cost 1, so the path with fewer hops wins. ${steer === "ref"
+        ? `The fix goes under \`router ospf 1\` on every router: \`auto-cost reference-bandwidth ${ref}\`.`
+        : `The fix is \`ip ospf cost ${cost}\` under \`interface fa0/0\`, on DIST and on EDGE.`}`,
+      "`ip ospf network point-to-point` goes on the interface, at both ends of each link: G0/1 on DIST and CORE1, Fa0/0 on DIST and EDGE. While only one end is changed the neighbour still shows FULL, but its routes disappear. With both done, `show ip ospf neighbor` shows `FULL/  -`.",
+      `\`show ip ospf interface g0/0\` names the DR and the BDR. Raising a priority does not unseat a designated router. \`ip ospf priority 0\` on EDGE makes it step down at once, and the backup takes over. If the role then sits on ${other}, restart OSPF there with \`clear ip ospf process\` and answer yes: ${want} is promoted, and ${other} comes back as the backup.`,
+    ],
+    solution: [
+      ...touched.map(d => ({ on: d, cmds: cfg(...fix[d]) })),
+      { on: other, cmds: ["enable", "clear ip ospf process", "yes"] },
+      ...touched.map(d => ({ on: d, cmds: ["write memory"] })),
+    ],
+  };
+}
+
 // ---------------------------------------------------------------- generators
 const pickVlans = x => { const ids = x.sample(VLAN_IDS, 2).sort((m, n) => m - n), names = x.sample(VLAN_NAMES, 2); return ids.map((id, i) => ({ id, name: names[i] })); };
 const CHANNEL_PORTS = [["g0/1", "g0/2"], ["fa0/7", "fa0/8"], ["fa0/5", "fa0/6"], ["fa0/6", "fa0/7", "fa0/8"], ["fa0/3", "fa0/4", "fa0/5"]];
@@ -906,6 +987,13 @@ const SKILLS = [
     },
   },
   {
+    id: "ospf-tune", topic: "ospf", name: "Tune OSPF paths and the designated router", par: 900,
+    gen(x) {
+      const [office, servers] = x.sample(Array.from({ length: 150 }, (_, i) => i + 1), 2), links = x.sample(Array.from({ length: 200 }, (_, i) => i + 1), 2);
+      return ospfTuneLab({ site: x.pick(SITES), office, servers, core: x.int(0, 50), links, steer: x.pick(["ref", "cost"]), ref: x.pick([1000, 10000]), cost: x.pick([50, 100, 200]), dr: x.pick(["CORE1", "CORE2"]) });
+    },
+  },
+  {
     id: "ospf-fault", topic: "ospf", name: "Find why OSPF neighbours are down", par: 720,
     gen(x) {
       const lans = x.sample(Array.from({ length: 150 }, (_, i) => i + 1), 3), l = x.sample(Array.from({ length: 200 }, (_, i) => i + 1), 2);
@@ -1179,7 +1267,7 @@ const AFTER = {
   "ansible-vlan": "ansible-rollout", "static-floating": "floating-backup", "relay-build": "dhcp-relay", "relay-fault": "dhcp-relay",
   "cli-name": "first-console", "cli-setup": "lock-it-down", "addr-lan": "desk-move", "addr-fault": "desk-move", "addr-svi": "switch-mgmt",
   "vlan-access": "vlans-101", "vlan-trunk": "trunk-line", "vlan-fault": "trunk-line", roas: "router-on-a-stick", "port-sec": "port-security",
-  "static-chain": "static-routes", "static-default": "default-route", "ospf-build": "ospf-single-area", "ospf-fault": "ospf-broken",
+  "static-chain": "static-routes", "static-default": "default-route", "ospf-build": "ospf-single-area", "ospf-fault": "ospf-broken", "ospf-tune": "ospf-tuning",
   "dhcp-pool": "dhcp-pools", "nat-pat": "nat-edge", "acl-filter": "acl-guard", "ssh-setup": "ssh-hardening",
 };
 for (const k of SKILLS) k.after = AFTER[k.id];

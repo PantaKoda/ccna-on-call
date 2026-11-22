@@ -1054,6 +1054,11 @@ show("interfaces switchport", s => s.dev.ifOrder.filter(n => s.dev.ifaces[n].sw)
 show("vlan", showVlan, ["switch"]);
 show("vlan brief", showVlan, ["switch"]);
 show("ip route", showIpRoute);
+// only the routes from one source, without the legend
+show("ip route ospf|static|connected", (s, src) => {
+  const codes = { ospf: ["O"], static: ["S"], connected: ["C", "L"] }[src];
+  return showIpRoute(s).split("\n").filter(l => codes.includes(l[0]) && /^\S+\s+\d/.test(l)).join("\n");
+}, ["router"]);
 show("ip ospf neighbor", showOspfNbr, ["router"]);
 show("ip ospf interface brief", showOspfIf, ["router"]);
 show("ip ospf interface", s => showOspfIfDetail(s), ["router"]);

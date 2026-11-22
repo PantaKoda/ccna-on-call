@@ -112,7 +112,7 @@ export const LEVEL_TOPIC = {
   "port-security": "l2security",
   "root-bridge": "switching", "rogue-switch": "switching", "port-channel": "switching",
   "static-routes": "static", "default-route": "static", "floating-backup": "static",
-  "ospf-single-area": "ospf", "ospf-broken": "ospf",
+  "ospf-single-area": "ospf", "ospf-broken": "ospf", "ospf-tuning": "ospf",
   "dhcp-pools": "dhcp", "dhcp-relay": "dhcp", "nat-edge": "nat", "acl-guard": "acl", "ssh-hardening": "access",
   "ansible-rollout": "netops",
   "p1-outage": "capstone", "greenfield-branch": "capstone",

@@ -1,5 +1,5 @@
 import { C } from "../checks.js";
-import { floatingLab } from "../practice.js";
+import { floatingLab, ospfTuneLab } from "../practice.js";
 
 const M24 = "255.255.255.0";
 const pc = (name, x, y, ip, gw) => ({ name, kind: "pc", x, y, ip: { mode: "static", ip, mask: M24, gw } });
@@ -193,6 +193,15 @@ export default [
       { on: "R3", cmds: ["enable", "configure terminal", "router ospf 1", "no passive-interface g0/1", "passive-interface g0/0", "end"] },
     ],
     debrief: "OSPF adjacency checklist: same subnet, same area, same hello/dead timers, unique router IDs, not passive, and matching authentication. `show ip ospf neighbor` being empty means one of those is off.",
+  },
+
+  {
+    id: "ospf-tuning", tier: 3, type: "lab", xp: 320, par: 960,
+    title: "Shortest Is Not Fastest",
+    from: "Dana Okafor, NOC Team Lead",
+    skills: ["auto-cost reference-bandwidth", "ip ospf network point-to-point", "ip ospf priority", "clear ip ospf process", "show ip ospf interface"],
+    ...ospfTuneLab({ site: "Harbour", office: 4, servers: 3, core: 0, links: [14, 34], steer: "ref", ref: 10000, cost: null, dr: "CORE1" }),
+    debrief: "Three habits to keep. OSPF adds up the cost of every outgoing interface on the way, and with the default reference it cannot tell 100 Mb/s from 10 Gb/s, so set the reference once, the same everywhere. A link with two routers needs no designated router. And a DR is not replaced by a better candidate: priority 0 removes a router from the running at once, but handing the role to a particular router takes a restart of OSPF on whoever holds it.",
   },
 
   {

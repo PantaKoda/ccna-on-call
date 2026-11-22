@@ -119,6 +119,11 @@ export const C = {
   ospfNeighbors: (dev, count) => net => (net.st.nbrs[dev] || []).length >= count,
   ospfNeighbor: (dev, other) => net => (net.st.nbrs[dev] || []).some(n => n.dev === other && n.state === "FULL"),
   routerId: (dev, rid) => net => net.st.rids[dev] === I(rid),
+  ospfRef: (devs, n) => net => devs.every(d => Object.values(net.devs[d].ospf).some(p => p.misc.includes(`auto-cost reference-bandwidth ${n}`))),
+  ospfCost: (dev, n, cost) => net => { const i = iface(net, dev, n); return !!i && i.ospfCost === cost; },
+  // the neighbour on this interface is up with no designated router, which takes point-to-point at both ends
+  ospfP2p: (dev, n) => net => (net.st.nbrs[dev] || []).some(x => x.iface === normIf(n) && x.role === "-" && x.state === "FULL" && x.usable),
+  ospfRole: (dev, n, role) => net => { const o = (net.st.oifs[dev] || []).find(x => x.name === normIf(n)); return !!o && o.role === role; },
   ospfPassive: (dev, n) => net => { const o = (net.st.oifs[dev] || []).find(x => x.name === normIf(n)); return !!o && o.passive; },
 
   // --- reachability

@@ -1159,6 +1159,29 @@ interface g0/1
 
 Both ends must use the same network type. In `show ip ospf neighbor` a point-to-point neighbour shows `FULL/ -` instead of `FULL/DR`. A mismatch is a trap worth knowing: with one end broadcast and the other point-to-point the neighbours still reach FULL, because the timers match, but the two describe the link differently and **no routes** are learned across it.
 
+## Tuning a running network
+
+OSPF picks the path with the lowest **total cost**: add the cost of every *outgoing* interface on the way, including the last one, onto the destination network. Count it by hand before you change anything.
+
+Example: the office router reaches the server LAN two ways. With the default reference, every interface here costs 1.
+
+| Path | Interfaces crossed | Default reference (100) | Reference 10000 |
+| --- | --- | --- | --- |
+| Direct, over 100 Mb/s copper | FastEthernet, then the server LAN (gigabit) | 1 + 1 = **2** | 100 + 10 = 110 |
+| Through the core, all gigabit | Gigabit, gigabit, then the server LAN (gigabit) | 1 + 1 + 1 = 3 | 10 + 10 + 10 = **30** |
+
+With the default reference the slow link wins, because it is one hop shorter and OSPF cannot see that it is ten times slower. There are two ways to fix it:
+
+- **Raise the reference bandwidth** on every router. This fixes the cause, for every link at once. Use the same value everywhere, or two routers will disagree about what a link costs.
+- **Set `ip ospf cost` on one link**, at both ends. This is the quick, local fix, for example to keep one link as a backup. Set it at both ends, because each direction is counted separately and traffic could otherwise go out one way and return the other.
+
+A sensible order for tuning work:
+
+1. **Look.** `show ip route` for the path in use, `show ip ospf interface brief` for the cost of each interface, `show ip ospf neighbor` for the roles.
+2. **Change one thing**, then look again. A cost change shows in the routing table at once.
+3. **Network types** come in pairs: change both ends of a link, and expect the routes over it to vanish while only one end is done.
+4. **Moving the DR** takes two steps: set the priorities, then restart OSPF on the router that holds the role (`clear ip ospf process`). Do it in a quiet moment: that router's neighbours all drop and re-form.
+
 ## OSPFv3 for IPv6 {v2}
 
 OSPFv3 is the same protocol carrying IPv6 routes. What stays: areas, cost, the neighbour rules, DR election and a **32-bit router ID** written like an IPv4 address. What changes:

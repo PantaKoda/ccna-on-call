@@ -100,6 +100,8 @@ const ospfLab = () => new Lab({
   run(lab, "R1", cfg("ip route 10.0.23.0 255.255.255.252 10.0.12.2"));
   ok("a route to the next hop installs it (recursive lookup)", has(0x0a030000));
   ok("and packets follow it", st().reach("R1", 0x0a030001, { proto: "icmp" }).ok);
+  const only = run(lab, "R1", ["enable", "show ip route static"]).split("\n").filter(l => /^S/.test(l));
+  ok("show ip route static lists only static routes", only.length === 3 && !/^C|Codes/m.test(run(lab, "R1", ["show ip route static"])));
   const e = run(lab, "R1", cfg("interface g0/1.10", "ip address 192.168.10.1 255.255.255.0"));
   ok("subinterface refuses an address before encapsulation", /only allowed/.test(e) && lab.net.devs.R1.ifaces["GigabitEthernet0/1.10"].ip == null, e);
   run(lab, "R1", cfg("interface g0/1.10", "encapsulation dot1q 10", "ip address 192.168.10.1 255.255.255.0"));

@@ -593,6 +593,16 @@ const BY_TOPIC = [
     ["1", "10", "100", "1000"], 1,
     "Cost is the reference divided by the interface bandwidth: 10000 Mb/s divided by 1000 Mb/s is 10. With the default reference of 100, anything from FastEthernet up costs 1."],
 
+  ["ospf", 3, "How does OSPF work out the cost of a path to a remote network?",
+    ["It counts the routers on the way", "It adds the cost of every outgoing interface along the path", "It takes the cost of the slowest link only", "It uses the cost the neighbour advertises, unchanged"], 1,
+    "Each router adds the cost of the interface the packet leaves through, including the last one onto the destination network. The lowest total wins."],
+  ["ospf", 3, "The designated router of a LAN is given <code>ip ospf priority 0</code>. What happens?",
+    ["Nothing until OSPF is restarted on it", "It gives up the role at once, the backup becomes designated router and a new backup is elected", "The whole LAN stops exchanging routes", "It becomes the backup designated router"], 1,
+    "A router with priority 0 may not hold either role, so it steps down immediately. Raising a priority is different: that never unseats the current DR."],
+  ["ospf", 3, "You raise the OSPF cost of a link on one end only. What can go wrong?",
+    ["The neighbours drop", "Traffic may leave over one path and come back over another", "The link stops being advertised", "Nothing: cost is negotiated between the two ends"], 1,
+    "Each router counts the cost of its own outgoing interface, so the two directions are decided separately. Set the cost on both ends to keep the path the same both ways."],
+
   ["vlans", 2, "One switch port is set to <code>dynamic desirable</code> and the port at the other end is left at <code>dynamic auto</code>. What does the link become?",
     ["An access link", "A trunk", "It goes err-disabled", "It stays down"], 1,
     "Desirable starts the DTP negotiation and auto answers it, so they agree on a trunk. Two auto ends never do."],

@@ -4,6 +4,13 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- New lab "Shortest Is Not Fastest" (tier 3), after "Silent Neighbours". OSPF already runs on four routers and three things need tidying: traffic takes a slow copper link because OSPF sees it as equal to gigabit, two links between router pairs hold needless elections, and the oldest router is the designated router of the core LAN. You raise the reference bandwidth, make the links point-to-point, and move the DR role with priorities and `clear ip ospf process`.
+- A variant template for it. Each variant picks whether to fix the path with the reference bandwidth (1000 or 10000) or with a fixed cost on the slow link, which core router should become designated router, and new addresses.
+- Theory: "Tuning a running network" on the OSPF page, with a worked cost count for two paths and an order to work in. Three new questions on path cost, priority 0 and one-sided cost changes. The bank now has 191.
+- `show ip route ospf`, `show ip route static` and `show ip route connected`.
+
 ## [0.10.0] - 2026-11-22
 
 This release follows a review of all the learning material for accuracy. Most of its points were right and are fixed here; a few were not and are left as they were.
