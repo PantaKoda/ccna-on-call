@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-22
+
 ### Added
 
 - New lab "Shortest Is Not Fastest" (tier 3), after "Silent Neighbours". OSPF already runs on four routers and three things need tidying: traffic takes a slow copper link because OSPF sees it as equal to gigabit, two links between router pairs hold needless elections, and the oldest router is the designated router of the core LAN. You raise the reference bandwidth, make the links point-to-point, and move the DR role with priorities and `clear ip ospf process`.
