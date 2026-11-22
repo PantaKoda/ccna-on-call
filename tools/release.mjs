@@ -1,5 +1,8 @@
 // Cuts a release: bumps the version, dates the changelog, commits, tags,
 // pushes, and publishes a GitHub release with the changelog section as notes.
+// Pushing the tag starts the Desktop builds workflow (.github/workflows/desktop.yml),
+// which attaches the desktop installers to that release; installed copies of
+// the desktop app then offer the update.
 //
 //   node tools/release.mjs patch|minor|major      bump from the current version
 //   node tools/release.mjs 1.4.0                  release an explicit version
@@ -62,7 +65,7 @@ const body = lines.slice(start + 1, end).join("\n").trim();
 if (!/^- /m.test(body)) die("nothing is listed under [Unreleased] in CHANGELOG.md");
 
 console.log(`Releasing ${tag} (was ${pkg.version})`);
-try { run("node", ["tests/run-levels.mjs"]); run("node", ["tests/run-sim.mjs"]); run("node", ["tests/run-drills.mjs"]); }
+try { for (const t of ["run-levels", "run-sim", "run-drills", "run-desktop"]) run("node", [`tests/${t}.mjs`]); }
 catch (e) { die("tests failed:\n" + (e.stdout || e.message)); }
 console.log("  tests pass");
 
@@ -71,12 +74,19 @@ const d = new Date();
 const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 pkg.version = version;
 fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+const lockPath = path.join(root, "package-lock.json");
+if (fs.existsSync(lockPath)) {
+  const lock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+  lock.version = version;
+  if (lock.packages && lock.packages[""]) lock.packages[""].version = version;
+  fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + "\n");
+}
 fs.writeFileSync(path.join(root, "js", "version.js"), `// Written by tools/release.mjs. Do not edit by hand.\nexport const VERSION = "${version}";\n`);
 lines.splice(start, end - start, "## [Unreleased]", "", `## [${version}] - ${date}`, "", body, "");
 fs.writeFileSync(logPath, lines.join("\n"));
 
 // ---- commit, tag, push, publish
-git("add", "package.json", "js/version.js", "CHANGELOG.md");
+git("add", "package.json", ...(fs.existsSync(lockPath) ? ["package-lock.json"] : []), "js/version.js", "CHANGELOG.md");
 git("commit", "-m", `Release ${tag}`, ...trailers.flatMap(t => ["--trailer", t]));
 git("tag", "-a", tag, "-m", `${tag}\n\n${body}`);
 console.log(`  committed and tagged ${tag}`);
@@ -88,6 +98,7 @@ const notes = path.join(os.tmpdir(), `release-notes-${tag}.md`);
 fs.writeFileSync(notes, body + "\n");
 try {
   console.log("  " + run("gh", ["release", "create", tag, "--title", tag, "--notes-file", notes, "--verify-tag"]));
+  console.log("  the Desktop builds workflow attaches the Windows, macOS and Linux installers to it in about 10 minutes");
 } catch (e) {
   console.log(`  the tag is pushed, but the GitHub release was not created (${(e.stderr || e.message).trim().split("\n")[0]})`);
   console.log(`  create it with: gh release create ${tag} --title ${tag} --notes-file <file>`);

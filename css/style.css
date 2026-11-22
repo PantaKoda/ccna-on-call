@@ -167,7 +167,7 @@ a.card:hover { border-color: var(--accent); transform: translateY(-1px); }
 .card-foot.next { color: var(--accent); font-family: var(--sans); font-weight: 700; }
 .card.next { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .card.locked { opacity: .5; }
-.home-foot { display: flex; gap: 16px; justify-content: center; margin-top: 30px; }
+.home-foot { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: center; margin-top: 30px; }
 
 /* ---------- windows / workspace ---------- */
 .play.lab { height: calc(100dvh - var(--topbar)); }
@@ -448,6 +448,9 @@ a.side-link:hover { border-color: var(--accent); }
 .card-top .vbadge { margin-left: 0; }
 .hb-section.tagged { border-left: 3px solid var(--line-2); padding-left: 12px; }
 .exam-chip b { color: var(--accent); margin-left: .2em; }
+/* desktop app only: shown when a new release is out */
+.update-btn[hidden] { display: none; }
+.update-btn:disabled { opacity: .8; cursor: progress; }
 .weight { margin-left: 1em; color: var(--muted); font-weight: 500; letter-spacing: 0; text-transform: none; font-size: 12.5px; }
 .chooser-wrap { max-width: 1000px; margin: 0 auto; padding: 34px 16px 60px; }
 .chooser-wrap h1 { font-size: clamp(26px, 4vw, 36px); margin-bottom: .3em; }

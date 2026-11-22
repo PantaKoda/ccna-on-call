@@ -5,3 +5,6 @@ tools
 /README.md
 docker-compose.yml
 *.log
+dist
+.github
+desktop

@@ -51,6 +51,25 @@ node tests/run-drills.mjs     # only the drill tests: 600 generated questions pe
 
 Each lab ships with a solution script. The test builds the lab, checks the objectives are not already met, types the solution into the simulated consoles and checks every objective is met at the end. It runs every variant template over 40 random seeds the same way, and checks that the question bank is well formed, that every topic has a theory page, and that every ticket and skill belongs to a topic. The Docker build runs the same test and fails if a level can no longer be completed.
 
+## Desktop app
+
+The same game also ships as a desktop app for Windows, macOS and Linux, built with Electron. It shows the very same files as the web version (served on a private `app://` origin), so every change reaches both.
+
+```bash
+npm install
+npm run desktop                     # run from the source tree
+npm run desktop -- --unlock-all     # with every level open
+npm run desktop -- --fake-update    # pretend a new release is out, to try the update button
+npm run desktop:dist                # build the installer for this OS into dist/
+```
+
+- **Downloads.** Every GitHub release has installers attached: `.exe` for Windows (installs for the current user, no administrator prompt), `.dmg` for macOS (Apple silicon and Intel), `.AppImage` for Linux. The builds are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper warn on first start (on a Mac: right-click the app, Open).
+- **Its own progress.** The desktop app keeps progress in its own data folder for the signed-in computer account (`%APPDATA%\CCNA On Call` on Windows, `~/Library/Application Support/CCNA On Call` on macOS, `~/.config/CCNA On Call` on Linux), apart from any browser running the web version, and apart from other accounts on the same computer. A copy run from the source tree uses `CCNA On Call (dev)` instead.
+- **Updates.** The app checks GitHub for a newer release when it starts and every four hours. When one is out it shows a system notification and an **Update** button in the top bar; pressing it downloads the new version and restarts the game on it, progress kept. Windows and the Linux AppImage update in place. macOS only installs updates into a signed app, so on a Mac the button opens the download page until the builds are signed. **Check for updates** is in the home screen footer and the File menu.
+- **Your own data packs.** File > Import (or **Import data pack** in the footer) copies a `questions.js` or `notes.js` (see [data/README.md](data/README.md)) into the app's data folder, where it survives updates. `npm run desktop:personal` builds an installer with the packs from `data/` inside, into `dist/personal/`; it copies them into the data folder on first start. That build holds your personal content: keep it on your own devices and never attach it to a release. The public builds contain only what is in this repository.
+
+Code: `desktop/main.mjs` (window, storage, updates, menu), `desktop/preload.cjs` (the `window.ccnaDesktop` bridge), `desktop/files.mjs` (which file each `app://` request gets), `js/ui/desktop.js` (the update button and footer links; does nothing in a browser), `desktop/builder.config.cjs` (electron-builder) and `.github/workflows/desktop.yml` (the builds).
+
 ## Docker
 
 ```bash
@@ -101,12 +120,16 @@ js/game/
 js/ui/                        screens: home (career path and topics), study page, lab workspace, terminal, network map, drills, handbook
 content/theory.md             the theory pages, one section per topic
 data/                         optional personal data packs (git-ignored)
+desktop/                      desktop app (Electron): main process, preload bridge, file serving, build config, icon
+.github/workflows/desktop.yml builds the desktop installers and attaches them to each release
 tools/serve.mjs               dev server
 tools/release.mjs             cuts a release (version, changelog, tag, push)
+tools/desktop-personal.mjs    desktop build with your own data packs inside (keep private)
 tools/import-data.mjs         builds data packs from the companion practice app
 tests/run-levels.mjs          level, variant template, topic and question bank tests
 tests/run-sim.mjs             simulator behaviour tests on small purpose-built networks
 tests/run-drills.mjs          drill tests: every generated answer is recomputed independently
+tests/run-desktop.mjs         desktop app file serving and data pack checks (no Electron needed)
 Dockerfile, nginx.conf        production image
 CHANGELOG.md                  what changed in each version
 ```
@@ -181,6 +204,8 @@ node tools/release.mjs patch      # or minor, major, or an explicit version
 ```
 
 The script expects the changes to be committed and described under `## [Unreleased]` in the changelog. It runs the tests, bumps the version, dates the changelog section, commits, tags, pushes and publishes the GitHub release. `--no-push` stops after the local commit and tag.
+
+Pushing the tag starts the **Desktop builds** workflow, which builds the Windows, macOS and Linux installers and attaches them, with the `latest*.yml` files the updater reads, to that release (about 10 minutes). Installed desktop apps then offer the update. The workflow also runs on pull requests that touch the desktop app, and by hand from the Actions tab, keeping the installers as a workflow artifact instead.
 
 ## Known limits of the simulator
 

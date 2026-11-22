@@ -4,6 +4,13 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- A desktop app for Windows, macOS and Linux, with the same game as the web version. Installers are attached to every GitHub release from now on.
+- The desktop app keeps its own progress, separate from any browser, in its data folder for your computer account. File > Open data folder shows where.
+- When a new version is out, the desktop app shows a notice and an Update button in the top bar. Pressing it downloads the new version and restarts the game on it; your progress stays. On a Mac the button opens the download page for now. Check for updates is also in the footer and the File menu.
+- The desktop app can import your own question bank or handbook (File > Import, or Import data pack in the footer). It is kept with your progress, so it survives updates.
+
 ## [0.15.0] - 2026-11-22
 
 ### Added

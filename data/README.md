@@ -15,3 +15,5 @@ You can drop in your own content. These two files are **ignored by git** so that
 `node tools/import-data.mjs <path>` builds both files from a folder that has `data/questions.js` and `data/notes.js` in the format of the companion practice app.
 
 If you build the Docker image on a machine where these files exist, they are copied into the image. Keep such an image private.
+
+The desktop app never gets them from a public build. Import them in the app (File > Import), which keeps them in the app's data folder through updates, or build a personal installer with `npm run desktop:personal`, which is just as private as such an image.

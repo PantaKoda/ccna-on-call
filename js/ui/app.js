@@ -9,6 +9,7 @@ import { mountLab } from "./labview.js";
 import { mountSubnet, mountDrill, mountQuiz, loadBank, countByTopic, SOURCES } from "./drills.js";
 import { toggleHandbook, closeHandbook, loadTheory, renderMarkdown, theoryPage } from "./handbook.js";
 import { VERSION } from "../version.js";
+import { updateButton, storageNote, desktopLinks } from "./desktop.js";
 
 const app = document.getElementById("app");
 const TYPE = { lab: "Lab", subnet: "Drill", drill: "Drill", quiz: "Exam" };
@@ -35,6 +36,7 @@ function renderTopbar(where) {
     where && where.back !== false ? h("a", { class: "btn ghost small", href: "#/" }, "← Home") : null,
     where ? h("span", { class: "top-title" }, where.tag ? h("span", { class: "tag" + (where.solved ? " done" : "") }, where.tag) : null, where.title) : h("span", { class: "top-title muted" }, "Kestrel Freight · Network Operations"),
     h("span", { class: "spacer" }),
+    updateButton(),
     chosen ? h("a", { class: "btn small exam-chip", href: "#/exam", title: `Studying for ${EXAMS[store.exam()].name}. Click to change.` }, h("span", { class: "exam-word" }, "Exam "), h("b", {}, EXAMS[store.exam()].short)) : null,
     chosen ? h("span", { class: "top-rank", title: "Your rank" }, r.rank) : null,
     chosen ? h("span", { class: "top-xp" }, `${t.xp} XP`) : null,
@@ -91,7 +93,8 @@ function renderHome() {
   main.replaceChildren(...[hero(), switcher(mode), ...(mode === "topics" ? topicsView() : careerView()),
     h("footer", { class: "home-foot muted small" },
       h("span", {}, `Version ${VERSION}`),
-      h("span", {}, "Progress is saved in this browser."),
+      h("span", {}, storageNote()),
+      ...desktopLinks(),
       h("button", { class: "linklike", onclick: () => { if (confirm("Erase all progress and exam history, and start again as an intern?")) { store.reset(); renderHome(); } } }, "Reset progress"))].filter(Boolean));
 }
 

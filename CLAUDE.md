@@ -7,6 +7,7 @@ A static web game (plain HTML, CSS, ES modules; no build step, no backend) that 
 - `node tools/serve.mjs` runs the dev server on http://localhost:8080 (`?unlock=all` opens every level).
 - `npm test` plays every lab's scripted solution, runs every variant template over 40 seeds, checks topics, theory and the question bank, then runs the simulator behaviour tests (`tests/run-sim.mjs`) and the drill tests (`tests/run-drills.mjs`). Run it after any change to `js/engine/`, `js/game/` or `content/`. When the simulator learns a new behaviour, add a check for it to `tests/run-sim.mjs`. A new drill generator in `js/game/drillgen.js` needs a second, independent calculation of its answers in `tests/run-drills.mjs`.
 - `docker build -t ccna-on-call .` builds the production image; the build runs the tests.
+- `npm run desktop` runs the desktop app (Electron) from the source tree; `npm run desktop:dist` builds its installer for this OS. The desktop app serves the same files as the web version, so game changes need nothing extra. Desktop-only code is in `desktop/` and `js/ui/desktop.js` (which must do nothing in a browser).
 
 ## Release cycle
 
@@ -17,14 +18,15 @@ Every change the owner asks for ends in a release that is pushed to GitHub. This
 3. Commit the change together with its changelog entry.
 4. Cut the release: `node tools/release.mjs patch|minor|major`, adding `--trailer "Co-Authored-By: ..."` when an assistant made the commit.
    - `minor` for a new level, feature or command; `patch` for a fix, wording or styling; `major` only when saved progress or the level format breaks.
-   - The script runs the tests, sets the version in `package.json` and `js/version.js`, dates the changelog section, commits `Release vX.Y.Z`, creates the tag, pushes `main` with the tag, and publishes a GitHub release with the changelog section as notes.
+   - The script runs the tests, sets the version in `package.json`, `package-lock.json` and `js/version.js`, dates the changelog section, commits `Release vX.Y.Z`, creates the tag, pushes `main` with the tag, and publishes a GitHub release with the changelog section as notes.
+   - The tag starts the Desktop builds workflow (`.github/workflows/desktop.yml`), which attaches the Windows, macOS and Linux installers to that release; installed desktop apps then offer the update. Check it finished with `gh run list --workflow desktop.yml`.
 5. Report the new version and the release link.
 
 Several changes asked for in one request go out as one release. Never edit `js/version.js` by hand, and never move or delete a tag that has been pushed.
 
 ## This repository is public
 
-- Never commit `data/questions.js` or `data/notes.js`. They are the owner's personal data packs (the question bank comes from a commercial book) and are git-ignored; the release script refuses to run if they are tracked. Do not copy their content into tracked files either.
+- Never commit `data/questions.js` or `data/notes.js`, never put them in a public desktop build, and never attach a personal build (`dist/personal/`) to a release. They are the owner's personal data packs (the question bank comes from a commercial book) and are git-ignored; the release script refuses to run if they are tracked. Do not copy their content into tracked files either.
 - New exam questions, theory pages, handbook text and level text must be written from scratch, not adapted from a book or another site.
 - Keep the two question sources apart in the UI: built-in questions are "Custom", an imported bank is "Book". Never merge them without the label.
 - No secrets, tokens, personal names, email addresses or local file paths in tracked files. Passwords in levels are made-up lab values.

@@ -4,9 +4,23 @@
   "private": true,
   "type": "module",
   "description": "CCNA: On Call - a gamified network engineering simulator",
+  "main": "desktop/main.mjs",
   "scripts": {
-    "test": "node tests/run-levels.mjs && node tests/run-sim.mjs && node tests/run-drills.mjs",
+    "test": "node tests/run-levels.mjs && node tests/run-sim.mjs && node tests/run-drills.mjs && node tests/run-desktop.mjs",
     "start": "node tools/serve.mjs",
+    "desktop": "electron .",
+    "desktop:dist": "electron-builder --config desktop/builder.config.cjs --publish never",
+    "desktop:personal": "node tools/desktop-personal.mjs",
     "release": "node tools/release.mjs"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
+  },
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  },
+  "allowScripts": {
+    "electron-winstaller": false
   }
 }
