@@ -11,6 +11,7 @@
 
 import { h, toast } from "./dom.js";
 import { createSpace, PLANETS } from "./space.js";
+import { createSpaceGL } from "./spacegl.js";
 import { music, MOODS } from "./music.js";
 
 const KEY = "ccna-on-call-cockpit";
@@ -18,7 +19,7 @@ const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion:
 const ROLL = { gentle: 1, cinematic: 3.5, hold: 0 };
 const prefs = Object.assign({
   music: false, source: "ambient", volume: 0.45, mood: "orbit", shuffle: false,
-  roll: reduced ? "hold" : "gentle", planet: "ochre", glass: 0.74, canopy: true,
+  roll: reduced ? "hold" : "gentle", planet: "ochre", glass: 0.74, canopy: true, graphics: "full",
 }, read());
 if (prefs.motion === false && !read().roll) prefs.roll = "hold";     // saved by an earlier version
 function read() { try { return JSON.parse(localStorage.getItem(KEY) || "{}"); } catch { return {}; } }
@@ -76,11 +77,26 @@ function applyLook() {
 function mount() {
   if (bg) return;
   applyLook();
-  const canvas = h("canvas", { class: "space-canvas" });
-  bg = h("div", { class: "cockpit-bg", "aria-hidden": "true" }, canvas, h("div", { class: "cockpit-vignette" }));
+  bg = h("div", { class: "cockpit-bg", "aria-hidden": "true" }, h("div", { class: "cockpit-vignette" }));
   bg.insertAdjacentHTML("beforeend", FRAME_SVG);
   document.body.prepend(bg);
-  try { space = createSpace(canvas, { rate: ROLL[prefs.roll] ?? 1, planet: prefs.planet, onTick }); } catch (e) { console.error("space view failed", e); }
+  startView();
+}
+
+// Full graphics draw the view on the GPU (spacegl.js); Light, or a browser
+// without WebGL 2, uses the canvas version (space.js). A canvas can only ever
+// have one kind of context, so each start gets a new one.
+let gpu = false;
+function startView() {
+  if (space) { space.destroy(); space = null; }
+  bg.querySelector(".space-canvas")?.remove();
+  const make = () => { const c = h("canvas", { class: "space-canvas" }); bg.prepend(c); return c; };
+  const o = { rate: ROLL[prefs.roll] ?? 1, planet: prefs.planet, onTick };
+  gpu = false;
+  if (prefs.graphics === "full") {
+    try { space = createSpaceGL(make(), o); gpu = true; return; } catch (e) { console.warn("GPU view unavailable, using the light one:", e.message); bg.querySelector(".space-canvas")?.remove(); }
+  }
+  try { space = createSpace(make(), o); } catch (e) { console.error("space view failed", e); }
 }
 
 function unmount() {
@@ -272,6 +288,8 @@ function drawPanel() {
       h("span", { class: "ck-label" }, "View outside"),
       h("div", { class: "ck-field" }, h("span", { class: "muted small" }, "Planet"),
         chips(Object.entries(PLANETS).map(([id, p]) => [id, p.name]), prefs.planet, id => { prefs.planet = id; save(); if (space) space.setPlanet(id); drawPanel(); }, "planet")),
+      h("div", { class: "ck-field" }, h("span", { class: "muted small" }, prefs.graphics === "full" && !gpu ? "Graphics (this browser has no WebGL 2, so the light view is shown)" : "Graphics"),
+        pills([["full", "Full (GPU)"], ["light", "Light"]], prefs.graphics, id => { prefs.graphics = id; save(); if (bg) startView(); drawPanel(); }, "graphics")),
       h("div", { class: "ck-field" }, h("span", { class: "muted small" }, "Orbit roll"),
         pills([["gentle", "Gentle"], ["cinematic", "Cinematic"], ["hold", "Hold"]], prefs.roll, id => { prefs.roll = id; save(); if (space) space.setRate(ROLL[id]); drawPanel(); }, "roll")),
       h("label", { class: "ck-field row" }, h("span", { class: "muted small" }, "Glass"), h("span", { class: "muted small" }, "Clear"), glass, h("span", { class: "muted small" }, "Solid")),

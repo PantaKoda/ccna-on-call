@@ -4,6 +4,10 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- The cockpit view is now drawn on your graphics card: a sharp gas giant at any screen size, rings that cast a shadow on the planet (and the planet on the rings), a glowing atmosphere at its edge, thousands of stars, and the sun blooming through the camera lens with a flare. Choose Light on the Bridge (Graphics) for the previous, lighter view; browsers without WebGL 2 use it automatically.
+
 ## [0.17.0] - 2026-11-22
 
 ### Added
