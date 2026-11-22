@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-22
+
 ### Added
 
 - "Choose two" questions in the exams and quick checks. They are marked the way the real exam marks them: you must pick exactly the number asked for, and the question counts as right only when every pick is right. The options have square markers, a line under the question says how many to choose and how many you have picked, and after checking, every correct option is shown.
