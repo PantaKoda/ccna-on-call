@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-22
+
 ### Added
 
 - Switches in the simulator can route. `ip routing` turns a switch into a layer 3 switch: it then routes between its SVIs, `show ip route` prints a routing table, static routes work, and it ignores `ip default-gateway`, as a real one does.
