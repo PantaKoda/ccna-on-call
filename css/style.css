@@ -296,6 +296,10 @@ code.big { font-size: 22px; padding: .15em .5em; }
 .option.correct { border-color: var(--green); background: color-mix(in srgb, var(--green) 11%, transparent); }
 .option.wrong { border-color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); }
 .option:disabled { cursor: default; }
+/* "choose two" questions: square markers, like checkboxes */
+.options.multi .letter { border-radius: 6px; }
+.choose { margin: -4px 0 12px; }
+.choose strong { color: var(--accent); }
 .explain { margin-top: 14px; padding: 12px 14px; border-left: 3px solid var(--blue); background: color-mix(in srgb, var(--blue) 7%, transparent); border-radius: 0 8px 8px 0; font-size: 14px; }
 .ok-text { color: var(--green); } .bad-text { color: var(--red); }
 

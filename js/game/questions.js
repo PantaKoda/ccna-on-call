@@ -1,6 +1,8 @@
 // The built-in question bank for the promotion exams. Every question here was
 // written for this game. `ch` is the CCNA exam domain (1-6), `a` is the index
-// of the correct option, and q / o / e may contain simple HTML such as <code>.
+// of the correct option (or a list of indexes for a "choose two" question, which
+// the quiz then presents as one), and q / o / e may contain simple HTML such as
+// <code>. Options are shuffled when shown, so their order here does not matter.
 
 const D1 = [
   ["Which OSI layer is responsible for logical addressing and choosing a path between networks?",
@@ -231,6 +233,8 @@ const D6 = [
 ];
 
 // Questions written for a specific topic: [topic, domain, question, options, answer, explanation]
+// Add new ones at the END of the list: a question's id is its position, and the
+// game remembers by id which questions a player got wrong.
 const BY_TOPIC = [
   ["addressing", 1, "A router interface is listed as <code>administratively down / down</code> in <code>show ip interface brief</code>. What brings it up?",
     ["Replacing the cable", "<code>no shutdown</code> on the interface", "Configuring a routing protocol", "Reloading the router"], 1,
@@ -640,6 +644,86 @@ const BY_TOPIC = [
   ["access", 5, "A user logs in over SSH with a local account created as <code>username admin privilege 15 secret ...</code>, on lines set to <code>login local</code>. Which prompt appears?",
     ["<code>Router&gt;</code>, and <code>enable</code> is needed as usual", "<code>Router#</code>, straight away", "<code>Router(config)#</code>", "The login is refused until an enable secret exists"], 1,
     "Privilege level 15 is privileged EXEC, so the session starts at the <code>#</code> prompt without typing <code>enable</code>."],
+
+  // ---- "choose two" questions: the answer is a list, and both must be picked
+  ["fundamentals", 1, "Which two statements describe UDP?",
+    ["It sends without setting up a connection first", "It is used by DNS queries and TFTP", "It retransmits segments that are lost", "It numbers every byte it sends", "It opens with a three-way handshake"], [0, 1],
+    "UDP adds port numbers and a checksum and nothing more: no handshake, no sequence numbers, no retransmission. The other three statements describe TCP."],
+  ["fundamentals", 1, "On equipment without auto-MDIX, which two links need a crossover cable?",
+    ["Switch to switch", "PC to router", "PC to switch", "Router to switch", "Router to hub"], [0, 1],
+    "A crossover joins two devices that transmit on the same pins: two switches, or a PC and a router. A switch or hub on one end and a PC or router on the other takes a straight-through cable."],
+  ["subnetting", 1, "Which two addresses can be given to hosts in the subnet 192.168.5.64/27?",
+    ["192.168.5.65", "192.168.5.94", "192.168.5.64", "192.168.5.95", "192.168.5.96"], [0, 1],
+    "A /27 has a block of 32, so this subnet runs from .64 (the network address) to .95 (the broadcast). Hosts use .65 to .94, and .96 starts the next subnet."],
+  ["subnetting", 1, "Which two prefix lengths give at least 100 usable host addresses?",
+    ["/24", "/25", "/26", "/27", "/28"], [0, 1],
+    "A /25 has 7 host bits: 128 addresses, 126 usable. A /24 has 254. A /26 has only 62."],
+  ["ipv6", 1, "Which two are correct ways to write <code>2001:0db8:0000:0000:0000:0000:0000:0001</code>?",
+    ["<code>2001:db8::1</code>", "<code>2001:db8:0:0:0:0:0:1</code>", "<code>2001:db8::0::1</code>", "<code>2001:db8:1</code>", "<code>2001:db8::1:0</code>"], [0, 1],
+    "Leading zeros in a group may be dropped, and one run of all-zero groups may become <code>::</code>. The double colon can appear only once, and the groups that remain must stay in place."],
+  ["ipv6", 1, "Which two statements about IPv6 link-local addresses are true?",
+    ["They begin with FE80", "Every IPv6 interface has one", "Routers forward them to other subnets", "They are only ever assigned by a DHCPv6 server", "They begin with FF02"], [0, 1],
+    "An interface creates its own link-local address in FE80::/10 as soon as IPv6 is enabled. It is valid on that one link only, and routing protocols use it as the next hop. FF02 is multicast."],
+  ["switching", 2, "Which two pairs of EtherChannel modes form a channel?",
+    ["active and passive", "desirable and auto", "passive and passive", "on and active", "auto and auto"], [0, 1],
+    "LACP needs at least one active end and PAgP at least one desirable end. Two passive or two auto ends both wait for the other, and <code>on</code> speaks no protocol, so it only works against <code>on</code>."],
+  ["switching", 2, "Which two spanning tree features belong on an access port that faces a single PC?",
+    ["PortFast", "BPDU guard", "Root guard", "A lower port cost", "Trunk mode"], [0, 1],
+    "PortFast lets the port forward at once, and BPDU guard shuts it if a switch is ever plugged in. Root guard belongs on ports that lead to other switches which must never become root."],
+  ["vlans", 2, "Which two pairs of switch port modes end up as a trunk?",
+    ["dynamic desirable and dynamic auto", "trunk and dynamic auto", "dynamic auto and dynamic auto", "access and dynamic desirable", "access and dynamic auto"], [0, 1],
+    "A trunk forms when at least one end asks for it (trunk or dynamic desirable) and the other is willing to answer. Two auto ends never ask, and an access port never trunks."],
+  ["vlans", 2, "Hosts in VLAN 10 on two switches reach each other across the trunk, but hosts in VLAN 20 do not. Which two causes are possible?",
+    ["VLAN 20 is missing from the allowed list at one end of the trunk", "VLAN 20 has not been created on one of the switches", "Both ends of the link are set to trunk mode", "The native VLAN is 1 at both ends", "The trunk carries 802.1Q tags"], [0, 1],
+    "The trunk itself works, since VLAN 10 crosses it. What is special about VLAN 20 is either that the trunk does not carry it or that one switch does not know it. The other three options describe a healthy trunk."],
+  ["intervlan", 2, "Which two things must be true for router-on-a-stick to work?",
+    ["The switch port facing the router is a trunk", "Each subinterface has <code>encapsulation dot1q</code> with its VLAN number", "The physical router interface has an IP address from VLAN 1", "The switch has <code>ip routing</code> enabled", "Each VLAN has its own cable to the router"], [0, 1],
+    "One trunk carries every VLAN to the router, and each subinterface takes the frames with its own tag. The physical interface only needs to be up, and the switch stays a layer 2 device."],
+  ["routing", 3, "Which two statements about how a router chooses a route are true?",
+    ["When forwarding, the longest matching prefix wins", "Administrative distance decides between routes to the same prefix from different sources", "The lowest metric wins even between two different routing protocols", "A default route is preferred over a /24 that also matches", "Administrative distance is compared before the prefix length"], [0, 1],
+    "Metric and administrative distance decide which route to one prefix is installed. Once the table is built, each packet simply takes the most specific entry that matches. Metrics of different protocols cannot be compared."],
+  ["static", 3, "Which two commands create a default route?",
+    ["<code>ip route 0.0.0.0 0.0.0.0 203.0.113.1</code>", "<code>ip route 0.0.0.0 0.0.0.0 serial0/0/0</code>", "<code>ip route 0.0.0.0 255.255.255.255 203.0.113.1</code>", "<code>ip default-gateway 203.0.113.1</code>", "<code>ip route 255.255.255.255 0.0.0.0 203.0.113.1</code>"], [0, 1],
+    "A default route is network 0.0.0.0 with mask 0.0.0.0, pointing at a next hop or an exit interface. <code>ip default-gateway</code> is for a device that does not route, such as a layer 2 switch."],
+  ["ospf", 3, "Which two settings must match before two OSPF routers on a link become neighbours?",
+    ["The area", "The hello and dead timers", "The process ID", "The router ID", "The interface cost"], [0, 1],
+    "Area and timers travel in every hello and must agree. The process ID is local to each router, router IDs must differ, and each side sets its own cost."],
+  ["ospf", 3, "Which two commands change the OSPF cost of one interface?",
+    ["<code>ip ospf cost 50</code> on the interface", "<code>bandwidth 10000</code> on the interface", "<code>ip ospf priority 50</code> on the interface", "<code>passive-interface</code> for it", "<code>router-id 1.1.1.1</code>"], [0, 1],
+    "The cost is the reference bandwidth divided by the interface bandwidth, so changing <code>bandwidth</code> changes it, and <code>ip ospf cost</code> sets it outright. Priority only affects the designated router election."],
+  ["dhcp", 4, "A router relays DHCP for a branch subnet, but branch PCs get no address. Which two things should you check?",
+    ["That <code>ip helper-address</code> is on the interface facing the PCs", "That the server has a pool for the branch subnet and a route back to it", "That the PCs have a static DNS server", "That NAT is configured on the relay router", "That the switch port is a trunk"], [0, 1],
+    "The helper belongs on the interface that hears the broadcasts. The server then picks the pool from the relay's address and must be able to send its offer back there."],
+  ["nat", 4, "Which two pieces of configuration does PAT need?",
+    ["<code>ip nat inside</code> and <code>ip nat outside</code> on the right interfaces", "An access list of inside addresses, named in <code>ip nat inside source list ... overload</code>", "A static route for every inside host", "One public address for every inside host", "A DHCP pool on the outside interface"], [0, 1],
+    "The interfaces tell the router which way traffic is going, and the access list says whose addresses to translate. <code>overload</code> is what lets them all share one public address."],
+  ["services", 4, "Which two DNS record types map a name to an IP address?",
+    ["A", "AAAA", "MX", "PTR", "CNAME"], [0, 1],
+    "A gives an IPv4 address and AAAA an IPv6 address. PTR is the reverse (address to name), CNAME points one name at another name, and MX names mail servers."],
+  ["monitoring", 4, "A router has <code>logging trap 4</code>. Which two messages does it send to the syslog server?",
+    ["A level 2 (critical) message", "A level 4 (warning) message", "A level 5 (notification) message", "A level 6 (informational) message", "A level 7 (debugging) message"], [0, 1],
+    "Choosing a level sends that level and everything more serious, and lower numbers are more serious. Level 4 therefore sends 0 to 4 and holds back 5, 6 and 7."],
+  ["security", 5, "Which two statements about TACACS+, compared with RADIUS, are true?",
+    ["It uses TCP", "It encrypts the whole body of the packet", "It was created as an open standard by the IETF", "It combines authentication and authorization in one step", "It encrypts only the password"], [0, 1],
+    "TACACS+ runs over TCP port 49, encrypts the full payload and keeps authentication, authorization and accounting apart. RADIUS uses UDP, encrypts only the password and combines the first two."],
+  ["l2security", 5, "Which two port security violation modes leave the port up?",
+    ["protect", "restrict", "shutdown", "sticky", "err-disable"], [0, 1],
+    "Protect drops the offending frames silently, and restrict drops them and also counts and logs them. Shutdown, the default, puts the port in the err-disabled state. Sticky is a way of learning addresses, not a violation mode."],
+  ["acl", 5, "Which two statements about access lists are true?",
+    ["The lines are read top down and the first match decides", "Every list ends with an invisible deny for everything", "A standard list can match the destination port", "The most specific line wins, wherever it sits in the list", "An outbound list filters pings the router itself sends"], [0, 1],
+    "Order is everything: there is no \"best match\", only the first one. A standard list sees only the source address, and a router's own traffic is not checked by its outbound lists."],
+  ["access", 5, "Which two things does a router need before it accepts SSH logins?",
+    ["An RSA key pair, made with <code>crypto key generate rsa</code>", "A way to log in on the VTY lines, such as <code>login local</code> with a user account", "<code>transport input telnet</code> on the VTY lines", "A password on the console line", "The HTTP server enabled"], [0, 1],
+    "SSH needs keys to encrypt with (which in turn need a hostname and a domain name) and a login method that has a username. The console line and Telnet have nothing to do with it."],
+  ["wireless", 2, "In the 2.4 GHz band, which two channels can be used alongside channel 1 without overlapping it or each other?",
+    ["6", "11", "2", "3", "5"], [0, 1],
+    "Channels in this band are 5 MHz apart but about 20 MHz wide, so only every fifth one is clear of its neighbours: 1, 6 and 11."],
+  ["automation", 6, "Which two data formats do REST APIs most often return?",
+    ["JSON", "XML", "SNMP", "Syslog", "YANG"], [0, 1],
+    "JSON is the usual choice and XML the older one. YANG describes how data is modelled, not how it is sent, and SNMP and syslog are protocols."],
+  ["netops", 6, "Which two statements about Ansible are true?",
+    ["It needs no agent on the devices it manages", "Its playbooks are written in YAML", "Managed devices pull their configuration from a server on a schedule", "It needs an agent installed on every device", "Its playbooks are written in XML"], [0, 1],
+    "Ansible pushes changes from a control node over SSH, with nothing installed on the device, and describes the work in YAML playbooks."],
 ];
 
 // Built-in questions on subjects that are in the v1.1 blueprint but not in v2.0.

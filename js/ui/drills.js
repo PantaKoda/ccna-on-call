@@ -197,29 +197,44 @@ export function mountQuiz(root, level, { onDone }) {
     const q = qs[i];
     progress.textContent = status();
     const order = shuffle(q.o.map((_, k) => k));
-    let picked = null, checked = false;
+    // A question has one correct option, or several (`a` is then a list). As in
+    // the real exam, a "choose two" question takes exactly two picks and is
+    // marked right only when both are right.
+    const answers = Array.isArray(q.a) ? q.a : [q.a], need = answers.length, multi = need > 1;
+    const picked = new Set();
+    let checked = false;
     const opts = order.map((k, pos) => h("button", { class: "option", type: "button", "aria-pressed": "false" },
       h("span", { class: "letter" }, "ABCDEF"[pos]), h("span", { class: "opt-text", html: q.o[k] })));
     const explain = h("div", { class: "explain", hidden: true });
     const btn = h("button", { class: "btn primary", disabled: true }, "Check answer");
+    const tally = h("span", { class: "muted small", "aria-live": "polite" });
+    const choose = multi ? h("p", { class: "choose" }, h("strong", {}, `Choose ${["", "one", "two", "three", "four"][need] || need}.`), " ", tally) : null;
     opts.forEach((b, pos) => b.addEventListener("click", () => {
       if (checked) return;
-      picked = pos;
-      opts.forEach((o, p) => { o.classList.toggle("picked", p === pos); o.setAttribute("aria-pressed", p === pos); });
-      btn.disabled = false;
+      let full = false;
+      if (!multi) { picked.clear(); picked.add(pos); }
+      else if (picked.has(pos)) picked.delete(pos);
+      else if (picked.size < need) picked.add(pos);
+      else full = true;                                   // already has the number asked for
+      opts.forEach((o, p) => { o.classList.toggle("picked", picked.has(p)); o.setAttribute("aria-pressed", picked.has(p)); });
+      btn.disabled = picked.size !== need;
+      if (multi) tally.textContent = full ? `You have picked ${need} already. Click one of them to unpick it first.` : `${picked.size} of ${need} picked.`;
     }));
     btn.addEventListener("click", () => {
       if (!checked) {
         checked = true;
-        const correctPos = order.indexOf(q.a);
-        const ok = picked === correctPos;
+        const correct = answers.map(k => order.indexOf(k)).sort((x, y) => x - y);
+        const ok = correct.every(p => picked.has(p));
         if (ok) right++; else missedTopics.add(q.topic);
         store.questionResult(q.id, ok);
-        opts[correctPos].classList.add("correct");
-        if (!ok) opts[picked].classList.add("wrong");
+        for (const p of correct) opts[p].classList.add("correct");
+        for (const p of picked) if (!correct.includes(p)) opts[p].classList.add("wrong");
         opts.forEach(o => { o.disabled = true; });
+        tally.textContent = "";
+        const letters = correct.map(p => "ABCDEF"[p]);
+        const reveal = multi ? `The answers are ${letters.slice(0, -1).join(", ")} and ${letters.at(-1)}. ` : `The answer is ${letters[0]}. `;
         explain.hidden = false;
-        explain.replaceChildren(h("strong", { class: ok ? "ok-text" : "bad-text" }, ok ? "Correct. " : `Not quite. The answer is ${"ABCDEF"[correctPos]}. `), h("span", { html: q.e }));
+        explain.replaceChildren(h("strong", { class: ok ? "ok-text" : "bad-text" }, ok ? "Correct. " : `Not quite. ${reveal}`), h("span", { html: q.e }));
         btn.textContent = i + 1 >= qs.length ? "Finish" : "Next question";
         progress.textContent = status();
       } else { i++; if (i >= qs.length) finish(); else show(); }
@@ -231,7 +246,7 @@ export function mountQuiz(root, level, { onDone }) {
         t ? h("span", { class: "muted small" }, t.name) : null,
         questionOnly(q, q.topic) === "v1" ? h("span", { class: "vbadge v1x", title: "In the v1.1 blueprint, not in v2.0" }, "v1 exclusive") : null,
         questionOnly(q, q.topic) === "v2" ? h("span", { class: "vbadge v2n", title: "New in the v2.0 blueprint" }, "New in v2") : null),
-      h("div", { class: "qhtml", html: q.q }), h("div", { class: "options" }, opts), explain, h("div", { class: "actions" }, btn)));
+      h("div", { class: "qhtml", html: q.q }), choose, h("div", { class: "options" + (multi ? " multi" : "") }, opts), explain, h("div", { class: "actions" }, btn)));
     card.scrollIntoView({ block: "nearest" });
   }
 

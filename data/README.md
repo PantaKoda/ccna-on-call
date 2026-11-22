@@ -9,7 +9,7 @@ You can drop in your own content. These two files are **ignored by git** so that
 | `questions.js` | the exam question bank | `window.CCNA_QUESTIONS = { questions: [{ id, ch, q, o, a, e }] }` |
 | `notes.js` | the Handbook | `window.CCNA_NOTES = [{ id, title, md }]` |
 
-- `ch` is the exam domain, 1 to 6. `q` (question), `o` (array of options) and `e` (explanation) may contain simple HTML. `a` is the index of the correct option.
+- `ch` is the exam domain, 1 to 6. `q` (question), `o` (array of options) and `e` (explanation) may contain simple HTML. `a` is the index of the correct option, or a list of indexes such as `[0, 2]` for a "choose two" question.
 - `md` is Markdown: `##` headings become sections, and tables, lists, block quotes and code blocks are supported.
 
 `node tools/import-data.mjs <path>` builds both files from a folder that has `data/questions.js` and `data/notes.js` in the format of the companion practice app.

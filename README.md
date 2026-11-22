@@ -17,7 +17,7 @@ It is a static web app (plain HTML, CSS and ES modules, no build step, no backen
 - **A PC command prompt**: `ipconfig`, `ping`, `tracert`, `ssh`, `telnet`, `curl`, plus an IP settings bar for static/DHCP addressing.
 - **A simulated Ansible control node** (v2.0): an inventory and a playbook you edit in the browser, `ansible` and `ansible-playbook` (with `--check`), and the `ios_config`, `ios_command` and `ping` modules, run against the simulated switches over simulated SSH. No containers or real Ansible involved.
 - **Scoring**: three stars per level (minus one per hint, minus one for going over par time), XP from tickets and from variants, and a rank that rises as you clear tiers. A solved lab is marked clearly on its screen and on its card.
-- **Exam questions by topic**, with the ones you missed coming back first. If you install your own question bank, every question is labelled **Book** or **Custom** and you can choose which to use.
+- **Exam questions by topic**, with the ones you missed coming back first, including "choose two" questions marked the way the real exam marks them. If you install your own question bank, every question is labelled **Book** or **Custom** and you can choose which to use.
 - **Handbook**: a searchable command reference plus every theory page, one click away during any ticket.
 - **Coaching**: when a command is rejected only because you are in the wrong mode, a tip says which mode it belongs in.
 - **Light and dark mode**, following your system setting until you pick one.
@@ -143,7 +143,7 @@ Add an object to one of the `js/game/levels/tierN.js` files. A lab looks like th
 
 Drills use `type: "subnet"` with `params: { count, minLen, maxLen }`, and exams use `type: "quiz"` with `params: { domains, count, pass }`.
 
-Exam questions are added to `js/game/questions.js`: either under an exam domain as `[question, [options], indexOfAnswer, explanation]`, or in the `BY_TOPIC` list with an explicit topic.
+Exam questions are added to `js/game/questions.js`: either under an exam domain as `[question, [options], indexOfAnswer, explanation]`, or in the `BY_TOPIC` list with an explicit topic. Give a list of indexes instead of one (`[0, 1]`) and the quiz shows it as a "choose two" question: exactly that many options must be picked, and it counts as right only when all of them are. Add new questions at the end of `BY_TOPIC`, because a question's id is its position and the game remembers by id which ones were missed.
 
 ## Adding variants to a lab
 

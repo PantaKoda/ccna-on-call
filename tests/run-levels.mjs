@@ -153,7 +153,11 @@ if (!only) {
     if (ids.has(q.id)) problems.push(`duplicate id ${q.id}`);
     ids.add(q.id);
     if (!q.q || !q.e || !Array.isArray(q.o) || q.o.length < 3) problems.push(`${q.id}: missing text, explanation or options`);
-    if (!Number.isInteger(q.a) || q.a < 0 || q.a >= q.o.length) problems.push(`${q.id}: answer index out of range`);
+    // one correct option, or a list of them for a "choose two" question
+    const ans = Array.isArray(q.a) ? q.a : [q.a];
+    if (!ans.length || ans.some(k => !Number.isInteger(k) || k < 0 || k >= q.o.length)) problems.push(`${q.id}: answer index out of range`);
+    if (Array.isArray(q.a) && (ans.length < 2 || new Set(ans).size !== ans.length || ans.length > q.o.length - 2)) problems.push(`${q.id}: a multi-select question needs 2 or more different answers and at least 2 wrong options`);
+    if (q.o.length > 6) problems.push(`${q.id}: more than six options`);
     if (new Set(q.o).size !== q.o.length) problems.push(`${q.id}: duplicate options`);
   }
   // each promotion exam must be fillable from the built-in bank, in both exam versions

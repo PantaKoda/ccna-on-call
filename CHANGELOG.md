@@ -4,6 +4,12 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- "Choose two" questions in the exams and quick checks. They are marked the way the real exam marks them: you must pick exactly the number asked for, and the question counts as right only when every pick is right. The options have square markers, a line under the question says how many to choose and how many you have picked, and after checking, every correct option is shown.
+- 26 questions of this kind, at least one for most topics. The bank now has 222.
+- An imported question bank can use the same format: give a list of answers instead of one.
+
 ## [0.12.0] - 2026-11-22
 
 ### Added
