@@ -105,6 +105,7 @@ function unmount() {
   document.documentElement.style.removeProperty("--glass-a");
   document.documentElement.classList.remove("ck-bare");
   closePanel();
+  setViewing(false);
   music.pause();
 }
 
@@ -306,7 +307,36 @@ function keepMood() { if (music.state.mood !== prefs.mood) { prefs.mood = music.
 // ---------------------------------------------------------------- top bar
 // What the top bar adds in the cockpit: the flight readout and the Bridge button.
 export function cockpitExtras() {
-  return isCockpit() ? [tele.el, bridgeBtn] : [];
+  return isCockpit() ? [tele.el, viewBtn, bridgeBtn] : [];
+}
+
+// ---------------------------------------------------------------- just the view
+// The View button hides every panel (the top bar too) to look outside; a small
+// button at the bottom, or Esc, brings them back. Nothing in a lab stops: its
+// clock keeps running.
+const viewBtn = h("button", {
+  class: "btn small view-btn", title: "Hide the panels and look outside (Esc brings them back)",
+  "aria-label": "Hide the panels and look outside", onclick: () => setViewing(true),
+}, h("span", { "aria-hidden": "true" }, "⛶"), h("span", { class: "ck-word" }, "View"));
+const backBtn = h("button", { class: "ck-back", onclick: () => setViewing(false) },
+  h("span", { "aria-hidden": "true" }, "▦ "), "Show the panels", h("kbd", {}, "Esc"));
+const viewKeys = e => { if (e.key === "Escape") { e.preventDefault(); setViewing(false); } };
+
+function setViewing(on) {
+  const root = document.documentElement;
+  if (on === root.classList.contains("ck-viewing")) return;
+  root.classList.toggle("ck-viewing", on);
+  if (on) {
+    closePanel();
+    if (document.activeElement) document.activeElement.blur();     // keys must not reach a hidden console
+    document.body.append(backBtn);
+    addEventListener("keydown", viewKeys, true);
+    backBtn.focus({ preventScroll: true });
+  } else {
+    backBtn.remove();
+    removeEventListener("keydown", viewKeys, true);
+    viewBtn.focus({ preventScroll: true });
+  }
 }
 
 // The button names the view you would switch to, like the theme button.

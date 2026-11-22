@@ -273,10 +273,27 @@
 .ck-field { display: grid; gap: 4px; margin: 10px 0; }
 .ck-field.row { display: flex; align-items: center; gap: 8px; }
 
+/* ---------- View: every panel hidden, only the view outside ---------- */
+:root[data-skin="cockpit"] #app, :root[data-skin="cockpit"] .handbook { transition: opacity .6s ease; }
+:root.ck-viewing[data-skin="cockpit"] :is(#app, .handbook, #toasts) { opacity: 0; pointer-events: none; }
+:root.ck-viewing[data-skin="cockpit"] body { overflow: hidden; }
+.ck-back {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 90;
+  display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; cursor: pointer;
+  font: 600 13px var(--sans); color: var(--text); background: rgba(5, 15, 25, .62);
+  border: 1px solid rgba(110, 215, 255, .4); border-radius: 99px;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  animation: ck-back-fade 4s ease forwards;
+}
+.ck-back:hover, .ck-back:focus-visible { animation: none; opacity: 1; border-color: var(--accent); box-shadow: 0 0 16px rgba(70, 224, 255, .35); }
+.ck-back kbd { font: 600 11px var(--mono); padding: 1px 6px; border: 1px solid var(--line-2); border-radius: 4px; color: var(--muted); }
+@keyframes ck-back-fade { 0%, 60% { opacity: 1; } 100% { opacity: .28; } }
+
 /* ---------- small screens, reduced motion ---------- */
 @media (max-width: 1180px) { :root[data-skin="cockpit"] .telemetry { display: none; } }
 @media (max-width: 560px) { .cockpit-panel { right: 8px; width: calc(100vw - 16px); } }
 @media (max-width: 900px) { .ck-word { display: none; } }
 @media (prefers-reduced-motion: reduce) {
   :root[data-skin="cockpit"] *, :root[data-skin="cockpit"] *::after, .ck-lights circle { animation: none !important; }
+  :root[data-skin="cockpit"] #app, :root[data-skin="cockpit"] .handbook { transition: none; }
 }
