@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-11-22
+
 ### Fixed
 
 - On a phone the top bar no longer runs off the side of the screen, so pages stop scrolling sideways. Below 560 px the bar shortens its labels (the exam chip shows only the version, and the logo stands in for the name when a Home link is next to it).
