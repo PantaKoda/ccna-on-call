@@ -8,6 +8,7 @@
   color-scheme: dark;
   --bg: #03060c;
   --glass-a: .74;                       /* the Bridge's Glass slider: how solid the panels are */
+  --read-a: .84;                        /* its Reading panels slider: theory, lists, drills */
   --bg-2: rgba(5, 14, 24, var(--glass-a));
   --panel: rgba(5, 15, 25, var(--glass-a));
   --panel-2: rgba(10, 28, 44, calc(var(--glass-a) + .02));
@@ -106,7 +107,7 @@
 @keyframes ck-pulse { 0%, 100% { box-shadow: 0 0 0 1px var(--accent) inset, 0 0 8px rgba(70, 224, 255, .15); } 50% { box-shadow: 0 0 0 1px var(--accent) inset, 0 0 24px rgba(70, 224, 255, .4); } }
 :root[data-skin="cockpit"] .hero { background: linear-gradient(120deg, rgba(14, 52, 70, calc(var(--glass-a) + .08)), rgba(5, 15, 25, calc(var(--glass-a) + .06)) 50%); }
 :root[data-skin="cockpit"] .handbook { background: rgba(5, 14, 24, .8); }
-:root[data-skin="cockpit"] .hb-section h3 { background: rgba(5, 14, 24, .92); }
+:root[data-skin="cockpit"] .handbook .hb-section h3 { background: rgba(5, 14, 24, .92); }
 :root[data-skin="cockpit"] .modal { background: rgba(6, 17, 28, .78); }
 :root[data-skin="cockpit"] .toast { background: rgba(8, 22, 36, .82); }
 
@@ -193,6 +194,46 @@
 :root[data-skin="cockpit"] .dev-body { filter: drop-shadow(0 0 5px rgba(70, 224, 255, .35)); }
 :root[data-skin="cockpit"] :is(.port-label, .dev-label, .dev-sub) { stroke: rgba(3, 10, 18, .9); }
 :root[data-skin="cockpit"] :is(.prose pre, .hb-body pre, .exhibit, .bubble pre, .qhtml pre) { background: rgba(1, 7, 13, .75); }
+
+/* ---------- reading panels: long text sits on darker glass ----------
+   Theory pages, the topic and career lists, drills, exams and the exam
+   chooser would otherwise float straight over the planet. How solid these
+   panels are is the Bridge's Reading panels slider (--read-a). */
+:root[data-skin="cockpit"] :is(.study-main, .track, .tier, .switcher, .drill-head, .chooser-wrap > h1, .chooser-wrap > .lead, .home-foot, .q-meta) {
+  position: relative;
+  background: rgba(3, 10, 18, var(--read-a));
+  -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid rgba(90, 200, 255, .16); border-radius: 8px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .4);
+}
+:root[data-skin="cockpit"] .study-main { padding: 26px 30px 30px; }
+:root[data-skin="cockpit"] :is(.track, .tier) { padding: 14px 16px 16px; }
+:root[data-skin="cockpit"] .switcher { padding: 8px 12px; }
+:root[data-skin="cockpit"] .drill-head { padding: 12px 16px; }
+:root[data-skin="cockpit"] .chooser-wrap > h1 { padding: 16px 20px 8px; margin: 0; border-radius: 8px 8px 0 0; border-bottom: 0; }
+:root[data-skin="cockpit"] .chooser-wrap > .lead { padding: 0 20px 16px; border-radius: 0 0 8px 8px; border-top: 0; }
+:root[data-skin="cockpit"] .home-foot { padding: 10px 16px; border-radius: 99px; }
+:root[data-skin="cockpit"] .q-meta { padding: 6px 10px; }
+:root[data-skin="cockpit"] .study-main::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background:
+    linear-gradient(var(--brk), var(--brk)) top left / 16px 2px no-repeat, linear-gradient(var(--brk), var(--brk)) top left / 2px 16px no-repeat,
+    linear-gradient(var(--brk), var(--brk)) bottom right / 16px 2px no-repeat, linear-gradient(var(--brk), var(--brk)) bottom right / 2px 16px no-repeat;
+}
+/* the theory itself: bright, calm text on the dark glass */
+:root[data-skin="cockpit"] .prose { color: #dcecf6; }
+:root[data-skin="cockpit"] .prose strong { color: #ffffff; }
+:root[data-skin="cockpit"] .prose .hb-section h3 { background: none; color: #bdf6ff; padding-bottom: 6px; border-bottom: 1px solid rgba(70, 224, 255, .22); text-shadow: 0 0 14px rgba(70, 224, 255, .25); }
+:root[data-skin="cockpit"] .prose h4 { color: #9fe7ff; }
+:root[data-skin="cockpit"] .prose a { color: #6fe9ff; }
+:root[data-skin="cockpit"] .prose :is(th, td) { border-color: rgba(110, 215, 255, .18); }
+:root[data-skin="cockpit"] .prose th { color: #9fc6db; background: rgba(70, 224, 255, .08); }
+:root[data-skin="cockpit"] .prose tr:nth-child(even) td { background: rgba(255, 255, 255, .025); }
+:root[data-skin="cockpit"] .prose blockquote { color: #f3e6cc; background: rgba(255, 191, 94, .08); border-left-color: var(--amber); }
+:root[data-skin="cockpit"] .prose pre { background: rgba(0, 4, 9, .8); border-color: rgba(110, 215, 255, .18); color: var(--term); }
+:root[data-skin="cockpit"] .prose code { color: #bfeaff; background: rgba(110, 190, 255, .1); border-color: rgba(110, 190, 255, .22); }
+:root[data-skin="cockpit"] .lead { color: #aac7da; }
+:root[data-skin="cockpit"] .topic-head h3, :root[data-skin="cockpit"] .tier-head h2 { color: #ffffff; }
 
 /* ---------- inside a lab: cleaner type, rounder glass, live effects ----------
    Only on a lab screen (main.play.lab), on desktop and phone alike: the lab
@@ -291,7 +332,11 @@
 
 /* ---------- small screens, reduced motion ---------- */
 @media (max-width: 1180px) { :root[data-skin="cockpit"] .telemetry { display: none; } }
-@media (max-width: 560px) { .cockpit-panel { right: 8px; width: calc(100vw - 16px); } }
+@media (max-width: 560px) {
+  .cockpit-panel { right: 8px; width: calc(100vw - 16px); }
+  :root[data-skin="cockpit"] .study-main { padding: 18px 16px 22px; }
+  :root[data-skin="cockpit"] :is(.track, .tier) { padding: 10px 10px 12px; }
+}
 @media (max-width: 900px) { .ck-word { display: none; } }
 @media (prefers-reduced-motion: reduce) {
   :root[data-skin="cockpit"] *, :root[data-skin="cockpit"] *::after, .ck-lights circle { animation: none !important; }

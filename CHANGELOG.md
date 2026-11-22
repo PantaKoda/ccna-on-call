@@ -10,6 +10,7 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 - Two new planets made in Blender, Kestrel Prime (warm belts and a great storm) and Cryon (an ice giant), with their own rings, plus a Blender-made sky full of nebulae and a cratered moon. Kestrel Prime is the planet you see first.
 - Sunlight on the Bridge (Full graphics): Day side shows the line between day and night across the planet, and Sunrise puts the sun just breaking over its edge, with a thin lit crescent and a lens streak.
 - A View button in the cockpit's top bar hides every panel so you can just look outside. Press Esc, or Show the panels at the bottom, to bring them back. A lab's clock keeps running meanwhile.
+- In the cockpit view, theory pages, the topic and career lists, drills and the exam chooser sit on dark glass reading panels, so their text no longer runs over the planet. Reading panels on the Bridge sets how solid they are. Theory text, tables, quotes and code have colours chosen for the glass.
 
 ## [0.17.0] - 2026-11-22
 

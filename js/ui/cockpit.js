@@ -19,7 +19,7 @@ const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion:
 const ROLL = { gentle: 1, cinematic: 3.5, hold: 0 };
 const prefs = Object.assign({
   music: false, source: "ambient", volume: 0.45, mood: "orbit", shuffle: false,
-  roll: reduced ? "hold" : "gentle", planet: "kestrel", glass: 0.74, canopy: true, graphics: "full", light: "day",
+  roll: reduced ? "hold" : "gentle", planet: "kestrel", glass: 0.74, read: 0.84, canopy: true, graphics: "full", light: "day",
 }, read());
 if (prefs.motion === false && !read().roll) prefs.roll = "hold";     // saved by an earlier version
 function read() { try { return JSON.parse(localStorage.getItem(KEY) || "{}"); } catch { return {}; } }
@@ -71,6 +71,7 @@ onTick(0.35, 0);
 function applyLook() {
   const root = document.documentElement;
   root.style.setProperty("--glass-a", String(prefs.glass));
+  root.style.setProperty("--read-a", String(prefs.read));
   root.classList.toggle("ck-bare", !prefs.canopy);
 }
 
@@ -103,6 +104,7 @@ function unmount() {
   if (space) { space.destroy(); space = null; }
   if (bg) { bg.remove(); bg = null; }
   document.documentElement.style.removeProperty("--glass-a");
+  document.documentElement.style.removeProperty("--read-a");
   document.documentElement.classList.remove("ck-bare");
   closePanel();
   setViewing(false);
@@ -255,6 +257,8 @@ function drawPanel() {
   vol.addEventListener("input", () => { prefs.volume = +vol.value; save(); music.setVolume(+vol.value); });
   const glass = h("input", { type: "range", min: 0.45, max: 0.94, step: 0.01, value: prefs.glass, "data-k": "glass", "aria-label": "How solid the glass panels are" });
   glass.addEventListener("input", () => { prefs.glass = +glass.value; save(); applyLook(); });
+  const read = h("input", { type: "range", min: 0.4, max: 0.97, step: 0.01, value: prefs.read, "data-k": "read", "aria-label": "How solid the reading panels are" });
+  read.addEventListener("input", () => { prefs.read = +read.value; save(); applyLook(); });
   let list = null;
   if (mine && n) {
     list = h("select", { class: "ck-select", "data-k": "list", "aria-label": "Track" }, st.tracks.map((t, i) => h("option", { value: i }, t.name)));
@@ -296,6 +300,7 @@ function drawPanel() {
       h("div", { class: "ck-field" }, h("span", { class: "muted small" }, "Orbit roll"),
         pills([["gentle", "Gentle"], ["cinematic", "Cinematic"], ["hold", "Hold"]], prefs.roll, id => { prefs.roll = id; save(); if (space) space.setRate(ROLL[id]); drawPanel(); }, "roll")),
       h("label", { class: "ck-field row" }, h("span", { class: "muted small" }, "Glass"), h("span", { class: "muted small" }, "Clear"), glass, h("span", { class: "muted small" }, "Solid")),
+      h("label", { class: "ck-field row", title: "Theory pages, the topic and career lists, drills and exams" }, h("span", { class: "muted small" }, "Reading panels"), h("span", { class: "muted small" }, "Clear"), read, h("span", { class: "muted small" }, "Solid")),
       h("div", { class: "ck-field row between" }, h("span", { class: "muted small" }, "Canopy frame and flight readout"),
         pills([["on", "Visible"], ["off", "Hidden"]], prefs.canopy ? "on" : "off", id => { prefs.canopy = id === "on"; save(); applyLook(); drawPanel(); }, "canopy"))),
   );
