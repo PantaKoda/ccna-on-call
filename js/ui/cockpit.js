@@ -19,7 +19,7 @@ const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion:
 const ROLL = { gentle: 1, cinematic: 3.5, hold: 0 };
 const prefs = Object.assign({
   music: false, source: "ambient", volume: 0.45, mood: "orbit", shuffle: false,
-  roll: reduced ? "hold" : "gentle", planet: "kestrel", glass: 0.74, canopy: true, graphics: "full",
+  roll: reduced ? "hold" : "gentle", planet: "kestrel", glass: 0.74, canopy: true, graphics: "full", light: "day",
 }, read());
 if (prefs.motion === false && !read().roll) prefs.roll = "hold";     // saved by an earlier version
 function read() { try { return JSON.parse(localStorage.getItem(KEY) || "{}"); } catch { return {}; } }
@@ -91,7 +91,7 @@ function startView() {
   if (space) { space.destroy(); space = null; }
   bg.querySelector(".space-canvas")?.remove();
   const make = () => { const c = h("canvas", { class: "space-canvas" }); bg.prepend(c); return c; };
-  const o = { rate: ROLL[prefs.roll] ?? 1, planet: prefs.planet, onTick };
+  const o = { rate: ROLL[prefs.roll] ?? 1, planet: prefs.planet, light: prefs.light, onTick };
   gpu = false;
   if (prefs.graphics === "full") {
     try { space = createSpaceGL(make(), o); gpu = true; return; } catch (e) { console.warn("GPU view unavailable, using the light one:", e.message); bg.querySelector(".space-canvas")?.remove(); }
@@ -290,6 +290,8 @@ function drawPanel() {
         chips(Object.entries(gpu ? { ...GL_PLANETS, ...PLANETS } : PLANETS).map(([id, p]) => [id, p.name]), gpu || prefs.planet in PLANETS ? prefs.planet : "ochre", id => { prefs.planet = id; save(); if (space) space.setPlanet(id); drawPanel(); }, "planet")),
       h("div", { class: "ck-field" }, h("span", { class: "muted small" }, prefs.graphics === "full" && !gpu ? "Graphics (this browser has no WebGL 2, so the light view is shown)" : "Graphics"),
         pills([["full", "Full (GPU)"], ["light", "Light"]], prefs.graphics, id => { prefs.graphics = id; save(); if (bg) startView(); drawPanel(); }, "graphics")),
+      gpu ? h("div", { class: "ck-field" }, h("span", { class: "muted small" }, "Sunlight"),
+        pills([["day", "Day side"], ["sunrise", "Sunrise"]], prefs.light, id => { prefs.light = id; save(); if (space && space.setLight) space.setLight(id); drawPanel(); }, "light")) : null,
       h("div", { class: "ck-field" }, h("span", { class: "muted small" }, "Orbit roll"),
         pills([["gentle", "Gentle"], ["cinematic", "Cinematic"], ["hold", "Hold"]], prefs.roll, id => { prefs.roll = id; save(); if (space) space.setRate(ROLL[id]); drawPanel(); }, "roll")),
       h("label", { class: "ck-field row" }, h("span", { class: "muted small" }, "Glass"), h("span", { class: "muted small" }, "Clear"), glass, h("span", { class: "muted small" }, "Solid")),

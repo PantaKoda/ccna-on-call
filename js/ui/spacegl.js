@@ -46,13 +46,13 @@ const WORLD = (() => {
   const pc = [Math.sin(off) * Math.cos(az) * dist, Math.sin(off) * Math.sin(az) * dist, -Math.cos(off) * dist];
   const n = norm([0.3, 0.92, 0.25]);                 // the planet's axis; the rings lie in its equator
   const t = norm(cross(n, [0, 0, 1])), b = cross(t, n);
-  // The sun: the planet's direction turned 118 degrees past the view's centre,
-  // then lifted a little. The planet's side toward the screen's middle is lit
-  // and the line between day and night runs across what we see of it.
-  const pd = norm(pc), k = norm(cross(pd, [0, 0, -1])), th = deg(118), lift = 0.18;
-  const rot = cross(k, pd).map((c, i) => pd[i] * Math.cos(th) + c * Math.sin(th));
-  const sun = norm([rot[0], rot[1] + lift, rot[2]]);
-  return { pc, r: 4, n, t, b, sun, ringIn: 1.3, ringOut: 2.3, moonOrbit: 6.6, moonR: 0.17 };
+  // The sun, as the planet's direction turned toward the middle of the view.
+  // At 70 degrees the line between day and night runs across what we see of
+  // the planet; at 35 the sun is just rising over its edge.
+  const pd = norm(pc), k = norm(cross(pd, [0, 0, -1]));
+  const sunAt = (a, lift) => { const th = deg(a), rot = cross(k, pd).map((c, i) => pd[i] * Math.cos(th) + c * Math.sin(th)); return norm([rot[0], rot[1] + lift, rot[2]]); };
+  const suns = { day: sunAt(70, 0.12), sunrise: sunAt(35.5, 0.02) };
+  return { pc, r: 4, n, t, b, suns, ringIn: 1.3, ringOut: 2.3, moonOrbit: 6.6, moonR: 0.17 };
 })();
 
 // ---------------------------------------------------------------- shaders
@@ -150,7 +150,7 @@ vec3 stars(vec3 d, float crowd) {
   vec3 c = vec3(0.0);
   for (int k = 0; k < 3; k++) {
     float scale = k == 0 ? 160.0 : k == 1 ? 380.0 : 820.0;
-    float dens = (k == 0 ? 0.025 : k == 1 ? 0.04 : 0.06) * (k == 0 ? 1.0 : 0.25 + 1.4 * crowd);
+    float dens = (k == 0 ? 0.022 : k == 1 ? 0.034 : 0.045) * (k == 0 ? 1.0 : 0.25 + 1.4 * crowd);
     float gain = k == 0 ? 5.0 : k == 1 ? 1.1 : 0.35;
     vec3 p = d * scale, cell = floor(p);
     float h = hash13(cell + float(k) * 71.0);
@@ -169,7 +169,7 @@ vec3 sky(vec3 d) {
   vec4 s = texture(uSky, uvFromDir(d));
   vec3 c = s.rgb * s.rgb * uSkyGain + stars(d, s.a);
   float cs = max(dot(d, uL), 0.0);
-  c += vec3(1.0, 0.93, 0.82) * (smoothstep(0.99989, 0.99994, cs) * 60.0 + pow(cs, 1400.0) * 10.0 + pow(cs, 120.0) * 0.7 + pow(cs, 10.0) * 0.05);
+  c += vec3(1.0, 0.93, 0.82) * (smoothstep(0.99989, 0.99994, cs) * 60.0 + pow(cs, 1400.0) * 10.0 + pow(cs, 120.0) * 0.35 + pow(cs, 12.0) * 0.018);
   return c;
 }
 
@@ -195,9 +195,11 @@ vec3 planet(vec3 rd, vec3 p) {
   // the rings' shadow
   float sh = 1.0, dn = dot(uL, uN);
   if (abs(dn) > 1e-4) { float s = dot(uPc - p, uN) / dn; if (s > 0.0) sh = 1.0 - 0.85 * ringAlpha(length(p + uL * s - uPc) / uR); }
+  alb = mix(alb, alb * alb * 1.6, 0.35);                                          // a little more contrast in the clouds
   vec3 c = alb * diff * sh * uSunI;
   c += alb * vec3(1.0, 0.42, 0.2) * exp(-pow(ndl * 6.0, 2.0)) * 0.16 * sh;     // warm twilight at the terminator
-  c += uAtmo * pow(1.0 - mu, 3.5) * smoothstep(-0.3, 0.4, ndl) * 1.4;          // atmosphere at the edge
+  c += uAtmo * pow(1.0 - mu, 4.0) * smoothstep(-0.3, 0.4, ndl) * 0.9;          // atmosphere at the edge
+  c += uAtmo * pow(1.0 - mu, 6.0) * pow(max(dot(rd, uL), 0.0), 3.0) * 3.0;      // sunlight through the edge, when the sun is behind
   c += alb * 0.003;
   return c;
 }
@@ -213,7 +215,7 @@ vec4 rings(vec3 rd, out float t) {
   vec3 alb = pow(s.rgb, vec3(2.2));
   float lit = dot(uL, uN) * dot(-rd, uN);
   vec3 c = lit > 0.0
-    ? alb * (0.25 + 0.75 * abs(dot(uL, uN))) * uSunI
+    ? alb * (0.2 + 0.6 * abs(dot(uL, uN))) * uSunI
     : alb * (1.0 - s.a) * uSunI * (0.3 + 2.0 * pow(max(dot(rd, uL), 0.0), 6.0));    // seen from the dark side, lit through the gaps
   // the planet's shadow, with a soft edge
   vec3 tc = uPc - q; float along = dot(tc, uL);
@@ -246,7 +248,8 @@ void main() {
     vec3 cpt = rd * tc; float dp = length(cpt - uPc);
     if (dp > uR * 0.98) {
       float h = (dp - uR) / uR, side = clamp(dot(normalize(cpt - uPc), uL) * 0.5 + 0.5, 0.0, 1.0);
-      bg += uAtmo * exp(-max(h, 0.0) * 42.0) * (0.12 + 1.3 * side * side) * (1.0 - cp);
+      float fwd = pow(max(dot(rd, uL), 0.0), 5.0);
+      bg += uAtmo * exp(-max(h, 0.0) * 42.0) * (0.1 + 1.0 * side * side + 3.0 * fwd * side) * (1.0 - cp);
     }
   }
   // back to front: the moon if it is behind the planet, rings behind it, the planet, then nearer things
@@ -280,17 +283,17 @@ uniform vec2 uRes; uniform vec3 uSun; uniform float uTime, uExposure;
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 void main() {
   vec2 dc = vUv - 0.5; float asp = uRes.x / uRes.y;
-  vec3 c = vec3(texture(uScene, vUv + dc * 0.0035).r, texture(uScene, vUv).g, texture(uScene, vUv - dc * 0.0035).b);
+  vec3 c = vec3(texture(uScene, vUv + dc * 0.0014).r, texture(uScene, vUv).g, texture(uScene, vUv - dc * 0.0014).b);
   c += texture(uBloomA, vUv).rgb * 0.55 + texture(uBloomB, vUv).rgb * 0.9;
   if (uSun.z > 0.0) {
     vec2 p = (vUv - uSun.xy) * vec2(asp, 1.0);
     c += vec3(1.0, 0.86, 0.72) * uSun.z * (exp(-abs(p.y) * 160.0) * exp(-abs(p.x) * 1.6) * 0.45 + exp(-length(p) * 9.0) * 0.25);
     vec2 axis = vec2(0.5) - uSun.xy;
     for (int i = 0; i < 4; i++) {
-      float k = i == 0 ? 0.55 : i == 1 ? 1.15 : i == 2 ? 1.5 : 1.85, r = i == 0 ? 0.035 : i == 1 ? 0.08 : i == 2 ? 0.018 : 0.12;
+      float k = i == 0 ? 0.55 : i == 1 ? 1.15 : i == 2 ? 1.5 : 1.85, r = i == 0 ? 0.025 : i == 1 ? 0.05 : i == 2 ? 0.012 : 0.07;
       vec3 tint = i == 0 ? vec3(0.3, 0.8, 1.0) : i == 1 ? vec3(0.6, 0.4, 1.0) : i == 2 ? vec3(1.0, 0.7, 0.4) : vec3(0.2, 0.7, 0.9);
       float d = length((vUv - (uSun.xy + axis * k)) * vec2(asp, 1.0));
-      c += tint * uSun.z * smoothstep(r, r * 0.7, d) * smoothstep(0.0, r, d + r * 0.3) * 0.05;
+      c += tint * uSun.z * smoothstep(r, r * 0.55, d) * (0.4 + 0.6 * smoothstep(r * 0.2, r, d)) * 0.022;
     }
   }
   c = aces(c * uExposure);
@@ -386,7 +389,8 @@ export function createSpaceGL(canvas, opts = {}) {
 
   const known = id => id in PLANETS || id in GL_PLANETS;
   let rate = opts.rate ?? 1, kind = known(opts.planet) ? opts.planet : "kestrel", look = [0, 0], lookTo = [0, 0];
-  let atmo = [1, 0.75, 0.55], moonTex = null;
+  let atmo = [1, 0.75, 0.55], moonTex = null, light = opts.light === "sunrise" ? "sunrise" : "day";
+  const sunDir = () => WORLD.suns[light];
   const genRing = texture(gl, 1024, 1, { data: ringStrip() });
   // a Blender planet shows its generated cousin until its images have loaded
   function makePlanet(id) {
@@ -453,7 +457,7 @@ export function createSpaceGL(canvas, opts = {}) {
 
   // where the sun is on screen, and how much of it is not hidden by the planet
   function sunOnScreen(m) {
-    const L = WORLD.sun;
+    const L = sunDir();
     const v = [m[0] * L[0] + m[1] * L[1] + m[2] * L[2], m[3] * L[0] + m[4] * L[1] + m[5] * L[2], m[6] * L[0] + m[7] * L[1] + m[8] * L[2]];   // transpose: world to camera
     if (v[2] >= -0.05) return [0, 0, 0];
     const asp = W / H, x = 0.5 + v[0] / -v[2] / (2 * tan * asp), y = 0.5 + v[1] / -v[2] / (2 * tan);
@@ -477,11 +481,11 @@ export function createSpaceGL(canvas, opts = {}) {
     const moon = w.pc.map((c, i) => c + ma * (Math.cos(th) * w.t[i] + Math.sin(th) * w.b[i]) + w.n[i] * 0.6);
     gl.useProgram(s.p);
     gl.uniform2f(u("uRes"), W, H); gl.uniform1f(u("uTime"), clock); gl.uniform1f(u("uTan"), tan);
-    gl.uniform1f(u("uPx"), (2 * tan) / H); gl.uniform1f(u("uSunI"), 1.2); gl.uniform1f(u("uSkyGain"), 1.6);
+    gl.uniform1f(u("uPx"), (2 * tan) / H); gl.uniform1f(u("uSunI"), light === "sunrise" ? 1.5 : 1.0); gl.uniform1f(u("uSkyGain"), 1.6);
     gl.uniform1f(u("uSpin"), (clock * TAU) / PLANET_DAY);
     gl.uniformMatrix3fv(u("uCam"), false, m);
     gl.uniform3fv(u("uPc"), w.pc); gl.uniform3fv(u("uN"), w.n); gl.uniform3fv(u("uT"), w.t); gl.uniform3fv(u("uB"), w.b);
-    gl.uniform3fv(u("uL"), w.sun); gl.uniform3fv(u("uAtmo"), atmo); gl.uniform3fv(u("uMoon"), moon);
+    gl.uniform3fv(u("uL"), sunDir()); gl.uniform3fv(u("uAtmo"), atmo); gl.uniform3fv(u("uMoon"), moon);
     gl.uniform1f(u("uR"), w.r); gl.uniform1f(u("uRingIn"), w.ringIn); gl.uniform1f(u("uRingOut"), w.ringOut); gl.uniform1f(u("uMoonR"), w.moonR);
     bind(u("uSky"), 0, skyTex); bind(u("uPlanet"), 1, planetTex); bind(u("uRing"), 2, ringTex);
     bind(u("uMoonTex"), 3, moonTex || ringTex); gl.uniform1f(u("uMoonHas"), moonTex ? 1 : 0);
@@ -529,6 +533,7 @@ export function createSpaceGL(canvas, opts = {}) {
   return {
     setRate(r) { rate = Math.max(0, +r || 0); if (!rate) lookTo = [0, 0]; run(); },
     setPlanet(id) { if (!known(id) || id === kind) return; kind = id; makePlanet(id); run(); },
+    setLight(id) { light = id === "sunrise" ? "sunrise" : "day"; run(); },
     destroy() {
       cancelAnimationFrame(raf); raf = 0; clearTimeout(resizeTimer);
       window.removeEventListener("resize", onResize); window.removeEventListener("pointermove", onPointer);
