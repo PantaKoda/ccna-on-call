@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-22
+
 ### Added
 
 - Space traffic in the cockpit view (Full graphics): a trading station turns slowly in the sky while haulers, shuttles and couriers arrive at its dock, leave it and jump away in a flash, and others pass in the distance, with engine glow, trails and blinking lights. Station and traffic on the Bridge turns it off.

@@ -1,2 +1,2 @@
 // Written by tools/release.mjs. Do not edit by hand.
-export const VERSION = "0.17.0";
+export const VERSION = "0.18.0";
