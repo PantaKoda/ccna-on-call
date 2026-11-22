@@ -1,20 +1,26 @@
 // The cockpit view: an optional look for the whole game, in the browser and in
 // the desktop app alike. The panels become glass screens in front of a ship's
 // canopy; behind them a ringed gas giant, its moon and the stars turn slowly as
-// the ship rolls in orbit (space.js). Music comes from the ship's own generated
-// score or from files the player chooses (music.js).
+// the ship rolls in orbit (space.js). The Bridge panel runs the music (the
+// ship's own generated score, or the player's own files: music.js) and the
+// view: which planet, how fast the ship rolls, how see-through the glass is.
 //
 // It changes only looks and sound: progress, labs and the simulator are the
-// same in both views. The choice is kept per browser, or per desktop install.
+// same in both views. The choices are kept per browser, or per desktop install.
 // js/theme.js sets data-skin="cockpit" before the first paint.
 
 import { h, toast } from "./dom.js";
-import { createSpace } from "./space.js";
-import { music } from "./music.js";
+import { createSpace, PLANETS } from "./space.js";
+import { music, MOODS } from "./music.js";
 
 const KEY = "ccna-on-call-cockpit";
 const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const prefs = Object.assign({ music: false, source: "ambient", volume: 0.45, motion: !reduced }, read());
+const ROLL = { gentle: 1, cinematic: 3.5, hold: 0 };
+const prefs = Object.assign({
+  music: false, source: "ambient", volume: 0.45, mood: "orbit", shuffle: false,
+  roll: reduced ? "hold" : "gentle", planet: "ochre", glass: 0.74, canopy: true,
+}, read());
+if (prefs.motion === false && !read().roll) prefs.roll = "hold";     // saved by an earlier version
 function read() { try { return JSON.parse(localStorage.getItem(KEY) || "{}"); } catch { return {}; } }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* storage unavailable */ } }
 
@@ -60,27 +66,36 @@ function onTick(roll, t) {
 }
 onTick(0.35, 0);
 
+// panel see-through-ness and the canopy frame are page styles
+function applyLook() {
+  const root = document.documentElement;
+  root.style.setProperty("--glass-a", String(prefs.glass));
+  root.classList.toggle("ck-bare", !prefs.canopy);
+}
+
 function mount() {
   if (bg) return;
+  applyLook();
   const canvas = h("canvas", { class: "space-canvas" });
   bg = h("div", { class: "cockpit-bg", "aria-hidden": "true" }, canvas, h("div", { class: "cockpit-vignette" }));
   bg.insertAdjacentHTML("beforeend", FRAME_SVG);
   document.body.prepend(bg);
-  try { space = createSpace(canvas, { motion: prefs.motion, onTick }); } catch (e) { console.error("space view failed", e); }
+  try { space = createSpace(canvas, { rate: ROLL[prefs.roll] ?? 1, planet: prefs.planet, onTick }); } catch (e) { console.error("space view failed", e); }
 }
 
 function unmount() {
   if (space) { space.destroy(); space = null; }
   if (bg) { bg.remove(); bg = null; }
+  document.documentElement.style.removeProperty("--glass-a");
+  document.documentElement.classList.remove("ck-bare");
   closePanel();
   music.pause();
 }
 
 // ---------------------------------------------------------------- music
-music.init({ source: prefs.source, volume: prefs.volume });
+music.init({ source: prefs.source, volume: prefs.volume, mood: prefs.mood, shuffle: prefs.shuffle });
 music.on(st => {
-  musicBtn.classList.toggle("on", st.playing);
-  musicBtn.setAttribute("aria-pressed", st.playing ? "true" : "false");
+  bridgeBtn.classList.toggle("on", st.playing);
   if (st.error) { toast(st.error, "warn"); st.error = null; }
   if (panel) drawPanel();
 });
@@ -89,14 +104,18 @@ function setMusic(on) {
   prefs.music = on; save();
   if (on) music.play(); else music.pause();
 }
+function useMine() {
+  prefs.source = "mine"; save();
+  music.setSource("mine");
+  if (!music.state.playing) setMusic(true);
+}
 
 // Sound can only start after a click or a key press. When the music was on
-// last time, the first one anywhere starts it again (unless it is on the music
-// controls themselves, which handle it).
+// last time, the first one anywhere starts it again (unless it is on the
+// Bridge itself, which handles it).
 function resumeOnGesture() {
   const go = e => {
-    if (panel && panel.contains(e.target)) return;
-    if (musicBtn.contains(e.target)) return;
+    if ((panel && panel.contains(e.target)) || bridgeBtn.contains(e.target)) return;
     off();
     if (isCockpit() && prefs.music) music.play();
   };
@@ -105,80 +124,169 @@ function resumeOnGesture() {
   addEventListener("keydown", go, true);
 }
 
-// ---------------------------------------------------------------- ship systems panel
-let panel = null;
-const picker = h("input", { type: "file", accept: "audio/*,.mp3,.ogg,.oga,.opus,.wav,.flac,.m4a,.aac", multiple: true, hidden: true });
-picker.addEventListener("change", async () => {
-  const files = [...picker.files];
-  picker.value = "";
-  if (!files.length) return;
+// ---------------------------------------------------------------- loading music
+let busy = null;      // what the loader is doing, shown in the panel
+const filePick = h("input", { type: "file", accept: "audio/*,.mp3,.ogg,.oga,.opus,.wav,.flac,.m4a,.aac", multiple: true, hidden: true });
+const folderPick = h("input", { type: "file", multiple: true, hidden: true, webkitdirectory: true });
+for (const input of [filePick, folderPick]) {
+  input.addEventListener("change", () => { const files = [...input.files]; input.value = ""; addFiles(files); });
+}
+
+async function addFiles(files) {
+  if (!files.length || busy) return;
+  busy = "Reading…";
+  if (panel) drawPanel();
   try {
-    const { added, skipped } = await music.addFiles(files);
+    const { added, skipped } = await music.addFiles(files, (i, n) => { busy = `Keeping ${i} of ${n} tracks…`; if (panel) drawLoader(); });
+    busy = null;
     if (!added) { toast("None of those files is audio. Choose MP3, OGG, Opus, WAV, FLAC or M4A files.", "warn"); return; }
-    toast(`Added ${added} track${added > 1 ? "s" : ""}${skipped ? `; ${skipped} file${skipped > 1 ? "s were" : " was"} not audio and left out` : ""}.`, "ok");
-    prefs.source = "mine"; save();
-    music.setSource("mine");
-    if (!music.state.playing) setMusic(true);
+    toast(`Added ${added} track${added > 1 ? "s" : ""}${skipped ? `; ${skipped} other file${skipped > 1 ? "s were" : " was"} left out` : ""}.`, "ok");
+    useMine();
   } catch (e) {
+    busy = null;
     toast(/quota/i.test(String(e && e.name)) ? "There is not enough room to keep those files. Free some disk space or pick fewer files." : `Could not keep those files: ${e && e.message ? e.message : e}`, "warn");
   }
-});
+  if (panel) drawPanel();
+}
 
-const musicBtn = h("button", {
-  class: "btn small music-btn", "aria-pressed": "false", "aria-haspopup": "dialog",
-  title: "Music and view settings", onclick: () => (panel ? closePanel() : openPanel()),
-}, h("span", { class: "eq", "aria-hidden": "true" }, h("i"), h("i"), h("i")), h("span", { class: "ck-word" }, "Ship"));
+async function useFolder(how) {
+  busy = how === "steam" ? "Looking in your Steam libraries…" : "Waiting for a folder…";
+  if (panel) drawPanel();
+  const res = await music.useFolder(how);
+  busy = null;
+  if (res && res.error) toast(res.error, "warn");
+  else if (res && !res.canceled) {
+    toast(`Playing ${res.tracks.length} tracks from ${res.game || res.folder}. They stay where they are on your computer.`, "ok");
+    useMine();
+  }
+  if (panel) drawPanel();
+}
+
+// ---------------------------------------------------------------- the Bridge panel
+let panel = null, spectrum = null, specRaf = 0, loaderEl = null;
+
+const bridgeBtn = h("button", {
+  class: "btn small bridge-btn", "aria-haspopup": "dialog", "aria-expanded": "false",
+  title: "Bridge: music and the view outside", onclick: () => (panel ? closePanel() : openPanel()),
+}, h("span", { class: "eq", "aria-hidden": "true" }, h("i"), h("i"), h("i")), h("span", { class: "ck-word" }, "Bridge"));
 
 function openPanel() {
-  panel = h("div", { class: "cockpit-panel", role: "dialog", "aria-label": "Ship systems: music and view" });
-  document.body.append(panel, picker);
+  panel = h("section", { class: "cockpit-panel", role: "dialog", "aria-label": "Bridge: music and view" });
+  panel.addEventListener("dragover", e => { e.preventDefault(); panel.classList.add("drop"); });
+  panel.addEventListener("dragleave", e => { if (!panel.contains(e.relatedTarget)) panel.classList.remove("drop"); });
+  panel.addEventListener("drop", e => { e.preventDefault(); panel.classList.remove("drop"); addFiles([...(e.dataTransfer?.files || [])]); });
+  document.body.append(panel, filePick, folderPick);
+  bridgeBtn.setAttribute("aria-expanded", "true");
   drawPanel();
   setTimeout(() => { addEventListener("pointerdown", outside, true); addEventListener("keydown", esc, true); });
   panel.querySelector("button")?.focus();
+  specRaf = requestAnimationFrame(drawSpectrum);
 }
 function closePanel() {
   if (!panel) return;
+  cancelAnimationFrame(specRaf); specRaf = 0;
   panel.remove(); panel = null;
+  bridgeBtn.setAttribute("aria-expanded", "false");
   removeEventListener("pointerdown", outside, true); removeEventListener("keydown", esc, true);
 }
-const outside = e => { if (panel && !panel.contains(e.target) && !musicBtn.contains(e.target)) closePanel(); };
-const esc = e => { if (e.key === "Escape") { closePanel(); musicBtn.focus(); } };
+const outside = e => { if (panel && !panel.contains(e.target) && !bridgeBtn.contains(e.target)) closePanel(); };
+const esc = e => { if (e.key === "Escape") { closePanel(); bridgeBtn.focus(); } };
 
-function drawPanel() {
-  const st = music.state, n = st.tracks.length, focused = document.activeElement && panel.contains(document.activeElement) ? document.activeElement.dataset.k : null;
-  const radio = (id, label, note, disabled) => h("label", { class: "ck-radio" + (disabled ? " off" : "") },
-    h("input", { type: "radio", name: "ck-source", value: id, checked: st.source === id, disabled, "data-k": "src-" + id,
-      onchange: () => { prefs.source = id; save(); music.setSource(id); } }),
-    h("span", {}, h("strong", {}, label), h("span", { class: "muted small" }, note)));
-  const vol = h("input", { type: "range", min: 0, max: 1, step: 0.05, value: st.volume, "data-k": "vol", "aria-label": "Music volume" });
-  vol.addEventListener("input", () => { prefs.volume = +vol.value; save(); music.setVolume(+vol.value); });
-  const motion = h("input", { type: "checkbox", checked: prefs.motion, "data-k": "motion" });
-  motion.addEventListener("change", () => { prefs.motion = motion.checked; save(); if (space) space.setMotion(prefs.motion); });
-
-  panel.replaceChildren(
-    h("p", { class: "eyebrow" }, "Ship systems"),
-    h("h3", {}, "Music"),
-    h("div", { class: "ck-row" },
-      h("button", { class: "btn small primary", "data-k": "play", onclick: () => setMusic(!st.playing) }, st.playing ? "❚❚ Pause" : "▶ Play"),
-      st.source === "mine" && n > 1 ? h("button", { class: "btn small", "data-k": "next", onclick: () => music.next() }, "Next track ⏭") : null,
-      h("span", { class: "muted small ck-now" }, st.playing ? (st.source === "mine" ? `Playing: ${st.current || "…"}` : "Playing the ship's score") : "Off")),
-    h("div", { class: "ck-sources", role: "radiogroup", "aria-label": "Music source" },
-      radio("ambient", "Ship's own score", "Made live by the game: slow chords, the engine's hum, the odd sonar ping. It never repeats."),
-      radio("mine", n ? `My music · ${n} track${n > 1 ? "s" : ""}` : "My music", n ? "Your files, in order, then round again." : "Choose some audio files first.", !n)),
-    h("div", { class: "ck-row" },
-      h("button", { class: "btn small", "data-k": "pick", onclick: () => picker.click() }, n ? "Add music files…" : "Choose music files…"),
-      n ? h("button", { class: "linklike small", "data-k": "forget", onclick: () => { if (confirm(`Remove your ${n} track${n > 1 ? "s" : ""} from the game? The files on your computer are not touched.`)) music.forget(); } }, "Remove my music") : null),
-    h("p", { class: "muted small" }, "Files you choose stay on this computer, kept with the game's saved data. They are never uploaded."),
-    h("label", { class: "ck-vol" }, h("span", {}, "Volume"), vol),
-    h("h3", {}, "View"),
-    h("label", { class: "ck-check" }, motion, h("span", {}, "Orbit motion", h("span", { class: "muted small" }, "The view rolls slowly as the ship orbits. Turn off to hold still."))));
-  if (focused) panel.querySelector(`[data-k="${focused}"]`)?.focus();
+function drawSpectrum() {
+  if (!panel) return;
+  specRaf = requestAnimationFrame(drawSpectrum);
+  if (!spectrum) return;
+  const c = spectrum, g = c.getContext("2d"), w = c.width, ht = c.height, bars = music.bars(24), gap = 3;
+  const bw = (w - gap * (bars.length - 1)) / bars.length, on = music.state.playing;
+  g.clearRect(0, 0, w, ht);
+  bars.forEach((v, i) => {
+    const bh = Math.max(2, v * (ht - 2)), x = i * (bw + gap);
+    const gr = g.createLinearGradient(0, ht, 0, ht - bh);
+    gr.addColorStop(0, on ? "rgba(92,240,168,.85)" : "rgba(120,160,190,.3)"); gr.addColorStop(1, on ? "rgba(70,224,255,1)" : "rgba(120,160,190,.45)");
+    g.fillStyle = gr; g.fillRect(x, ht - bh, bw, bh);
+  });
 }
 
+const pills = (items, current, onPick, label) => h("div", { class: "ck-pills", role: "group", "aria-label": label },
+  items.map(([id, text, disabled]) => h("button", { class: "ck-pill" + (id === current ? " on" : ""), "aria-pressed": id === current ? "true" : "false", disabled, "data-k": `${label}-${id}`, onclick: () => onPick(id) }, text)));
+const chips = (items, current, onPick, label) => h("div", { class: "ck-chips", role: "group", "aria-label": label },
+  items.map(([id, text]) => h("button", { class: "ck-chip" + (id === current ? " on" : ""), "aria-pressed": id === current ? "true" : "false", "data-k": `${label}-${id}`, onclick: () => onPick(id) }, text)));
+
+function drawLoader() {
+  if (!loaderEl) return;
+  const st = music.state, n = st.tracks.length;
+  loaderEl.replaceChildren(...[
+    h("p", { class: "muted small" }, busy || (music.desktop
+      ? "Play a folder of your own music straight from disk, such as a game soundtrack, or add single files. Nothing is copied or uploaded."
+      : "Add your own music: a whole folder (such as a game soundtrack) or single files, or drop them here. They are kept in this browser on this computer and never uploaded.")),
+    h("div", { class: "ck-row" },
+      music.desktop ? h("button", { class: "btn small", disabled: !!busy, "data-k": "steam", onclick: () => useFolder("steam"), title: "Looks for an installed X3 game in your Steam libraries and plays its soundtrack folder" }, "Find X3 on Steam") : null,
+      h("button", { class: "btn small", disabled: !!busy, "data-k": "folder", onclick: () => (music.desktop ? useFolder("pick") : folderPick.click()) }, "Choose a folder…"),
+      h("button", { class: "btn small", disabled: !!busy, "data-k": "files", onclick: () => filePick.click() }, "Add files…"),
+      n ? h("button", { class: "linklike small", disabled: !!busy, "data-k": "forget", onclick: () => { if (confirm(`Remove your ${n} track${n > 1 ? "s" : ""} from the game? The files on your computer are not touched.`)) music.forget(); } }, "Remove my music") : null),
+    n ? h("p", { class: "muted small" }, `${st.folder ? `Folder: ${st.folder}. ` : ""}Clips shorter than 25 seconds are skipped.`) : null,
+  ].filter(Boolean));
+}
+
+function drawPanel() {
+  const st = music.state, n = st.tracks.length, mine = st.source === "mine";
+  const was = document.activeElement && panel.contains(document.activeElement) ? document.activeElement.dataset.k : null;
+  const mood = MOODS[st.mood];
+
+  spectrum = h("canvas", { class: "ck-spectrum", width: 312, height: 36, "aria-hidden": "true" });
+  const vol = h("input", { type: "range", min: 0, max: 1, step: 0.02, value: st.volume, "data-k": "vol", "aria-label": "Music volume" });
+  vol.addEventListener("input", () => { prefs.volume = +vol.value; save(); music.setVolume(+vol.value); });
+  const glass = h("input", { type: "range", min: 0.45, max: 0.94, step: 0.01, value: prefs.glass, "data-k": "glass", "aria-label": "How solid the glass panels are" });
+  glass.addEventListener("input", () => { prefs.glass = +glass.value; save(); applyLook(); });
+  let list = null;
+  if (mine && n) {
+    list = h("select", { class: "ck-select", "data-k": "list", "aria-label": "Track" }, st.tracks.map((t, i) => h("option", { value: i }, t.name)));
+    list.value = String(st.index);
+    list.addEventListener("change", () => music.pick(+list.value));
+  }
+  loaderEl = h("div", { class: "ck-loader" });
+
+  panel.replaceChildren(
+    h("header", { class: "ck-head" },
+      h("div", {}, h("p", { class: "eyebrow" }, "Kestrel Freight · Bridge"), h("h3", {}, "Ship systems")),
+      h("button", { class: "btn ghost small", "aria-label": "Close the Bridge", onclick: closePanel }, "✕")),
+
+    h("section", { class: "ck-sec" },
+      h("div", { class: "ck-row between" },
+        h("span", { class: "ck-label" }, "Comms and music"),
+        pills([["ambient", "Ship's score"], ["mine", n ? `My music · ${n}` : "My music", !n]], st.source, id => { prefs.source = id; save(); music.setSource(id); }, "source")),
+      h("div", { class: "ck-now" },
+        h("strong", {}, mine ? (st.current || st.tracks[st.index]?.name || "No track") : mood.name),
+        h("span", { class: "muted small" }, mine ? `Track ${st.index + 1} of ${n}${st.shuffle ? " · shuffle" : ""}` : `${mood.note}. Made live by the game; it never repeats.`),
+        spectrum),
+      h("div", { class: "ck-row" },
+        h("button", { class: "btn small", "data-k": "prev", title: mine ? "Previous track" : "Previous mood", "aria-label": mine ? "Previous track" : "Previous mood", onclick: () => { music.prev(); keepMood(); } }, "⏮"),
+        h("button", { class: "btn small primary ck-play", "data-k": "play", onclick: () => setMusic(!st.playing) }, st.playing ? "❚❚ Pause" : "▶ Play"),
+        h("button", { class: "btn small", "data-k": "next", title: mine ? "Next track" : "Next mood", "aria-label": mine ? "Next track" : "Next mood", onclick: () => { music.next(); keepMood(); } }, "⏭"),
+        mine ? h("button", { class: "btn small" + (st.shuffle ? " primary" : ""), "data-k": "shuffle", "aria-pressed": st.shuffle ? "true" : "false", title: "Shuffle", onclick: () => { prefs.shuffle = !st.shuffle; save(); music.setShuffle(prefs.shuffle); } }, "⤮") : null,
+        h("label", { class: "ck-vol" }, h("span", { "aria-hidden": "true" }, "🔊"), vol)),
+      mine ? list : chips(Object.entries(MOODS).map(([id, m]) => [id, m.name]), st.mood, id => { music.setMood(id); keepMood(); }, "mood"),
+      loaderEl),
+
+    h("section", { class: "ck-sec" },
+      h("span", { class: "ck-label" }, "View outside"),
+      h("div", { class: "ck-field" }, h("span", { class: "muted small" }, "Planet"),
+        chips(Object.entries(PLANETS).map(([id, p]) => [id, p.name]), prefs.planet, id => { prefs.planet = id; save(); if (space) space.setPlanet(id); drawPanel(); }, "planet")),
+      h("div", { class: "ck-field" }, h("span", { class: "muted small" }, "Orbit roll"),
+        pills([["gentle", "Gentle"], ["cinematic", "Cinematic"], ["hold", "Hold"]], prefs.roll, id => { prefs.roll = id; save(); if (space) space.setRate(ROLL[id]); drawPanel(); }, "roll")),
+      h("label", { class: "ck-field row" }, h("span", { class: "muted small" }, "Glass"), h("span", { class: "muted small" }, "Clear"), glass, h("span", { class: "muted small" }, "Solid")),
+      h("div", { class: "ck-field row between" }, h("span", { class: "muted small" }, "Canopy frame and flight readout"),
+        pills([["on", "Visible"], ["off", "Hidden"]], prefs.canopy ? "on" : "off", id => { prefs.canopy = id === "on"; save(); applyLook(); drawPanel(); }, "canopy"))),
+  );
+  drawLoader();
+  if (was) panel.querySelector(`[data-k="${was}"]`)?.focus();
+}
+function keepMood() { if (music.state.mood !== prefs.mood) { prefs.mood = music.state.mood; save(); } }
+
 // ---------------------------------------------------------------- top bar
-// What the top bar adds in the cockpit: the flight readout and the Ship button.
+// What the top bar adds in the cockpit: the flight readout and the Bridge button.
 export function cockpitExtras() {
-  return isCockpit() ? [tele.el, musicBtn] : [];
+  return isCockpit() ? [tele.el, bridgeBtn] : [];
 }
 
 // The button names the view you would switch to, like the theme button.

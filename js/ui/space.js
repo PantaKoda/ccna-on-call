@@ -8,8 +8,9 @@
 // second from that lookup, which is cheap. Everything else is redrawn each
 // frame at about 30 frames a second, and nothing at all while the tab is hidden.
 //
-//   const space = createSpace(canvas, { motion: true, onTick: (roll, t) => {} });
-//   space.setMotion(false);   // hold still (also what reduced motion asks for)
+//   const space = createSpace(canvas, { rate: 1, planet: "ochre", onTick: (roll, t) => {} });
+//   space.setRate(0);          // hold still (also what reduced motion asks for); 1 gentle, 3.5 cinematic
+//   space.setPlanet("ice");    // another planet outside (PLANETS)
 //   space.destroy();
 
 const TAU = Math.PI * 2;
@@ -57,18 +58,35 @@ function wrapNoise(rand, gx, gy) {
   };
 }
 
+// The planets the Bridge can put outside: cloud colours (from dark to light
+// bands), the big storm's colour, the rings and the glow of the atmosphere.
+export const PLANETS = {
+  ochre: {
+    name: "Ochre giant",
+    pal: [[0.00, 46, 24, 22], [0.18, 104, 52, 38], [0.34, 168, 102, 64], [0.48, 214, 160, 110], [0.60, 236, 206, 164], [0.70, 196, 132, 92], [0.82, 150, 84, 70], [0.92, 230, 196, 168], [1.00, 120, 70, 58]],
+    storm: [196, 96, 70], spots: [244, 230, 210], ring: "226,204,174", atm: [255, 196, 150], halo: "255,190,140",
+  },
+  ice: {
+    name: "Ice giant",
+    pal: [[0.00, 10, 30, 52], [0.20, 24, 70, 110], [0.36, 50, 120, 160], [0.50, 110, 180, 205], [0.62, 170, 220, 232], [0.72, 80, 150, 190], [0.84, 40, 96, 140], [0.93, 190, 232, 240], [1.00, 30, 80, 120]],
+    storm: [230, 245, 255], spots: [210, 240, 255], ring: "190,220,235", atm: [120, 210, 255], halo: "120,210,255",
+  },
+  ember: {
+    name: "Ember world",
+    pal: [[0.00, 30, 6, 8], [0.18, 80, 16, 14], [0.34, 150, 40, 22], [0.48, 210, 90, 40], [0.60, 240, 150, 70], [0.70, 170, 54, 30], [0.82, 110, 28, 22], [0.92, 250, 190, 110], [1.00, 70, 14, 12]],
+    storm: [255, 210, 120], spots: [255, 170, 90], ring: "230,170,130", atm: [255, 120, 70], halo: "255,120,80",
+  },
+};
+
 // Cloud bands, a large storm and a few small ones, as RGB bytes (TW x TH).
-function cloudTexture(rand) {
+function cloudTexture(rand, look) {
   const oct = [0, 1, 2, 3].map(k => ({ n: wrapNoise(rand, 8 << k, (12 << k) + 1), gx: 8 << k, gy: 12 << k }));
   const fbm = (u, v) => {
     let sum = 0, amp = 0.5;
     for (const o of oct) { sum += amp * o.n(u * o.gx, v * o.gy); amp *= 0.5; }
     return sum / 0.9375;
   };
-  const PAL = [
-    [0.00, 46, 24, 22], [0.18, 104, 52, 38], [0.34, 168, 102, 64], [0.48, 214, 160, 110],
-    [0.60, 236, 206, 164], [0.70, 196, 132, 92], [0.82, 150, 84, 70], [0.92, 230, 196, 168], [1.00, 120, 70, 58],
-  ];
+  const PAL = look.pal;
   const pal = t => {
     t = clamp01(t);
     let i = 1;
@@ -77,9 +95,9 @@ function cloudTexture(rand) {
     return [a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, a[3] + (b[3] - a[3]) * f];
   };
   const ph = [rand() * TAU, rand() * TAU, rand() * TAU, rand() * TAU];
-  const storms = [{ u: 0.3, v: 0.63, rx: 0.075, ry: 0.035, spin: 3.2, col: [196, 96, 70], k: 0.55 }];
+  const storms = [{ u: 0.3, v: 0.63, rx: 0.075, ry: 0.035, spin: 3.2, col: look.storm, k: 0.55 }];
   for (let i = 0; i < 7; i++) {
-    storms.push({ u: rand(), v: 0.2 + rand() * 0.6, rx: 0.012 + rand() * 0.012, ry: 0.007 + rand() * 0.006, spin: 2.2, col: [244, 230, 210], k: 0.5 });
+    storms.push({ u: rand(), v: 0.2 + rand() * 0.6, rx: 0.012 + rand() * 0.012, ry: 0.007 + rand() * 0.006, spin: 2.2, col: look.spots, k: 0.5 });
   }
 
   const out = new Uint8Array(TW * TH * 3);
@@ -139,20 +157,29 @@ function sphereLookup(light) {
   return { idx: Uint32Array.from(idx), U: Float32Array.from(U), V: Uint16Array.from(V), S: Float32Array.from(S), RIM: Float32Array.from(RIM), A: Uint8Array.from(A) };
 }
 
-function makePlanet(rand) {
+// The sphere lookup does not depend on the planet's colours, so it is built
+// once and shared when the player picks another planet.
+let sharedLookup = null;
+function lightDir() {
   const [px, py] = polar(LAYOUT.planet.angle, LAYOUT.planet.dist);
   const [sx, sy] = polar(LAYOUT.sun.angle, LAYOUT.sun.dist);
   let lx = sx - px, ly = sy - py, lz = 0.18;
-  const len = Math.hypot(lx, ly, lz); lx /= len; ly /= len; lz /= len;
-  const tex = cloudTexture(rand), look = sphereLookup([lx, ly, lz]);
+  const len = Math.hypot(lx, ly, lz);
+  return [lx / len, ly / len, lz / len];
+}
+
+function makePlanet(rand, kind) {
+  const [lx, ly, lz] = lightDir(), colours = PLANETS[kind] || PLANETS.ochre;
+  const tex = cloudTexture(rand, colours), look = sharedLookup || (sharedLookup = sphereLookup([lx, ly, lz]));
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = P;
   const c = canvas.getContext("2d");
   const img = c.createImageData(P, P), px8 = img.data;
-  const ATM = [255, 196, 150];
+  const ATM = colours.atm;
   let lastOff = -1;
   return {
     canvas,
+    colours,
     light: [lx, ly],
     paint(off) {
       off = ((Math.floor(off) % TW) + TW) % TW;
@@ -176,7 +203,8 @@ function makePlanet(rand) {
 export function createSpace(canvas, opts = {}) {
   const ctx = canvas.getContext("2d");
   const rand = rng(0x5eed42);
-  let motion = opts.motion !== false;
+  let rate = opts.rate ?? 1, motion = rate > 0, kind = PLANETS[opts.planet] ? opts.planet : "ochre";
+  let look = [0, 0], lookTo = [0, 0];
   let W = 0, H = 0, D = 0, dpr = 1, stars = null, twinkles = [], dust = [];
   let planet = null, planetFade = 0, raf = 0, last = 0, lastPaint = -1e9, lastTick = 0;
   let clock = 0, prev = performance.now();
@@ -241,7 +269,10 @@ export function createSpace(canvas, opts = {}) {
 
     // everything outside the ship turns together
     ctx.save();
-    ctx.translate(cx, cy); ctx.rotate(a);
+    // a little parallax when the pointer moves: far stars shift least
+    const shift = depth => [look[0] * depth * d, look[1] * depth * d];
+    const [s0x, s0y] = shift(0.006);
+    ctx.translate(cx + s0x, cy + s0y); ctx.rotate(a);
     ctx.drawImage(stars, -stars.width / 2, -stars.height / 2);
     ctx.globalCompositeOperation = "lighter";
     for (const s of twinkles) {
@@ -255,9 +286,9 @@ export function createSpace(canvas, opts = {}) {
     ctx.globalCompositeOperation = "source-over";
 
     if (planet) {
-      if (motion || force || lastPaint < 0) {
-        if (clock - lastPaint > 0.4 || force) { planet.paint((clock * TW) / PLANET_DAY); lastPaint = clock; }
-      }
+      if (clock - lastPaint > 0.4 || force) { planet.paint((clock * TW) / PLANET_DAY); lastPaint = clock; }
+      const [p0x, p0y] = shift(0.012), ca0 = Math.cos(-a), sa0 = Math.sin(-a);
+      ctx.translate(p0x * ca0 - p0y * sa0, p0x * sa0 + p0y * ca0);
       ctx.globalAlpha = planetFade;
       const [px, py] = polar(LAYOUT.planet.angle, LAYOUT.planet.dist).map(v => v * d), R = LAYOUT.planet.r * d;
       moon(px, py, R, d);
@@ -272,9 +303,10 @@ export function createSpace(canvas, opts = {}) {
     // the camera's own: lens flare from the sun, dust on the move past the canopy
     const ca = Math.cos(a), sa = Math.sin(a);
     flare(cx + sx * ca - sy * sa, cy + sx * sa + sy * ca, cx, cy, d);
+    const [dx0, dy0] = shift(0.03);
     for (const p of dust) {
       ctx.fillStyle = `rgba(200,230,255,${p.a})`;
-      ctx.fillRect(p.x * k, p.y * k, 1.4 * k * p.z, 1.4 * k * p.z);
+      ctx.fillRect(p.x * k + dx0 * p.z, p.y * k + dy0 * p.z, 1.4 * k * p.z, 1.4 * k * p.z);
     }
   }
 
@@ -311,8 +343,8 @@ export function createSpace(canvas, opts = {}) {
   }
 
   function halo(x, y, R) {
-    const g = ctx.createRadialGradient(x, y, R * 0.97, x, y, R * 1.09);
-    g.addColorStop(0, "rgba(255,190,140,0.32)"); g.addColorStop(0.3, "rgba(255,170,130,0.12)"); g.addColorStop(1, "rgba(255,150,120,0)");
+    const c = planet.colours.halo, g = ctx.createRadialGradient(x, y, R * 0.97, x, y, R * 1.09);
+    g.addColorStop(0, `rgba(${c},0.32)`); g.addColorStop(0.3, `rgba(${c},0.12)`); g.addColorStop(1, `rgba(${c},0)`);
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, R * 1.09, 0, TAU); ctx.fill();
   }
 
@@ -324,7 +356,7 @@ export function createSpace(canvas, opts = {}) {
     ctx.beginPath(); ctx.rect(-outer * R * 1.1, side < 0 ? -outer * R * 1.1 : 0, outer * R * 2.2, outer * R * 1.1); ctx.clip();
     const g = ctx.createRadialGradient(0, 0, inner * R, 0, 0, outer * R), A = side < 0 ? 0.55 : 0.85;
     const bands = [[0, 0], [0.04, 0.3], [0.17, 0.2], [0.22, 0.04], [0.27, 0.38], [0.48, 0.42], [0.53, 0.1], [0.6, 0.3], [0.84, 0.24], [0.89, 0.03], [0.93, 0.16], [1, 0]];
-    for (const [o, al] of bands) g.addColorStop(o, `rgba(226,204,174,${(al * A).toFixed(3)})`);
+    for (const [o, al] of bands) g.addColorStop(o, `rgba(${planet.colours.ring},${(al * A).toFixed(3)})`);
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(0, 0, outer * R, 0, TAU); ctx.arc(0, 0, inner * R, 0, TAU, true); ctx.fill();
     ctx.restore();
@@ -342,12 +374,14 @@ export function createSpace(canvas, opts = {}) {
   function frame(now) {
     raf = requestAnimationFrame(frame);
     const dt = Math.min(0.1, (now - prev) / 1000); prev = now;
-    if (motion) clock += dt;
+    clock += dt * rate;
+    const ease = 1 - Math.exp(-dt * 2.5);
+    look[0] += (lookTo[0] - look[0]) * ease; look[1] += (lookTo[1] - look[1]) * ease;
     if (now - last < FRAME) return;
     last = now;
     if (planet && planetFade < 1) planetFade = Math.min(1, planetFade + 0.02);
     if (motion) {
-      const vx = Math.cos(0.9) * 14, vy = Math.sin(0.9) * 14;
+      const vx = Math.cos(0.9) * 14 * Math.sqrt(rate), vy = Math.sin(0.9) * 14 * Math.sqrt(rate);
       for (const p of dust) {
         p.x += vx * p.z * (FRAME / 1000); p.y += vy * p.z * (FRAME / 1000);
         if (p.x > W) p.x -= W; if (p.y > H) p.y -= H;
@@ -355,7 +389,7 @@ export function createSpace(canvas, opts = {}) {
     }
     draw(false);
     if (opts.onTick && now - lastTick > 250) { lastTick = now; opts.onTick(roll(), clock); }
-    if (!motion && planetFade >= 1) { cancelAnimationFrame(raf); raf = 0; }
+    if (!motion && planetFade >= 1 && Math.abs(look[0]) + Math.abs(look[1]) < 0.001) { cancelAnimationFrame(raf); raf = 0; }
   }
 
   function run() { if (!raf) { prev = performance.now(); raf = requestAnimationFrame(frame); } }
@@ -363,15 +397,28 @@ export function createSpace(canvas, opts = {}) {
   let resizeTimer = 0;
   const onResize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { resize(); run(); }, 150); };
   window.addEventListener("resize", onResize);
+  const onPointer = e => {
+    if (!motion) return;
+    lookTo = [-(e.clientX / Math.max(1, W) - 0.5), -(e.clientY / Math.max(1, H) - 0.5)];
+  };
+  window.addEventListener("pointermove", onPointer, { passive: true });
   resize();
   run();
   // the planet takes a moment to build; draw the stars first, then let it rise
-  const build = () => { planet = makePlanet(rng(0xa11ce)); planet.paint(0); lastPaint = clock; run(); };
+  const build = () => { planet = makePlanet(rng(0xa11ce), kind); planet.paint(clock * TW / PLANET_DAY); lastPaint = clock; run(); };
   const idle = window.requestIdleCallback || (f => setTimeout(f, 60));
   idle(build, { timeout: 600 });
 
   return {
-    setMotion(on) { motion = !!on; run(); },
-    destroy() { cancelAnimationFrame(raf); raf = 0; window.removeEventListener("resize", onResize); clearTimeout(resizeTimer); },
+    setRate(r) { rate = Math.max(0, +r || 0); motion = rate > 0; if (!motion) lookTo = [0, 0]; run(); },
+    setPlanet(id) {
+      if (!PLANETS[id] || id === kind) return;
+      kind = id;
+      idle(() => { if (kind !== id) return; const next = makePlanet(rng(0xa11ce), id); next.paint(clock * TW / PLANET_DAY); planet = next; draw(true); run(); }, { timeout: 300 });
+    },
+    destroy() {
+      cancelAnimationFrame(raf); raf = 0; clearTimeout(resizeTimer);
+      window.removeEventListener("resize", onResize); window.removeEventListener("pointermove", onPointer);
+    },
   };
 }

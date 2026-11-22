@@ -7,8 +7,10 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 ### Added
 
 - A cockpit view: press Cockpit in the top bar and the game's screens turn into glass panels in a spaceship orbiting a ringed planet, with the stars and the planet turning slowly behind them. Press Classic to go back. Your progress is the same in both views.
-- Music in the cockpit view, from the Ship button: the ship's own ambient score, made live by the game, or your own music files. Files you choose stay on your computer, kept with your saved data, and are never uploaded.
-- Orbit motion can be turned off in the Ship panel, and is off from the start if your system asks for reduced motion.
+- The Bridge button in the cockpit view: music and the view outside. The ship's own ambient score is made live by the game in three moods. Or play your own music: a whole folder (such as a game soundtrack) or single files, dropped in or chosen. It has play, pause, next, previous, shuffle, a track list and a live spectrum. Short clips under 25 seconds are skipped. Your files stay on your computer and are never uploaded.
+- The desktop app can find an X3 game's soundtrack in your Steam libraries and play it straight from the game folder, without copying it.
+- The Bridge also picks the planet outside (ochre, ice or ember), how fast the ship rolls (gentle, cinematic or hold), how see-through the glass panels are, and whether the canopy frame and flight readout show. Roll starts on hold if your system asks for reduced motion.
+- In the cockpit view, a lab keeps the plain system font for easy reading, and its console and network map glow: a lit prompt, amber log lines, glowing ports, the open device in amber and flowing EtherChannel links.
 
 ### Fixed
 

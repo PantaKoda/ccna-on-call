@@ -14,6 +14,12 @@ contextBridge.exposeInMainWorld("ccnaDesktop", {
       return () => ipcRenderer.removeListener("update:state", f);
     },
   },
+  music: {
+    get: () => ipcRenderer.invoke("music:get"),
+    pickFolder: () => ipcRenderer.invoke("music:pick"),
+    findSteam: () => ipcRenderer.invoke("music:steam"),
+    clear: () => ipcRenderer.invoke("music:clear"),
+  },
   data: {
     info: () => ipcRenderer.invoke("data:info"),
     import: () => ipcRenderer.invoke("data:import"),

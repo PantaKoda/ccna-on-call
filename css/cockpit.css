@@ -7,9 +7,10 @@
 :root[data-skin="cockpit"] {
   color-scheme: dark;
   --bg: #03060c;
-  --bg-2: rgba(5, 14, 24, .74);
-  --panel: rgba(5, 15, 25, .74);
-  --panel-2: rgba(10, 28, 44, .76);
+  --glass-a: .74;                       /* the Bridge's Glass slider: how solid the panels are */
+  --bg-2: rgba(5, 14, 24, var(--glass-a));
+  --panel: rgba(5, 15, 25, var(--glass-a));
+  --panel-2: rgba(10, 28, 44, calc(var(--glass-a) + .02));
   --line: rgba(90, 200, 255, .2);
   --line-2: rgba(110, 215, 255, .36);
   --text: #e2f5ff;
@@ -21,7 +22,7 @@
   --red: #ff8494;
   --green: #5cf0a8;
   --blue: #84bdff;
-  --term-bg: rgba(1, 7, 13, .8);
+  --term-bg: rgba(1, 7, 13, calc(var(--glass-a) + .06));
   --term: #c6f7e7;
   --term-input: #ffffff;
   --term-warn: #ffb2a8;
@@ -47,6 +48,8 @@
 /* ---------- the view behind the page ---------- */
 .cockpit-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; background: #02040a; }
 .cockpit-bg .space-canvas, .cockpit-bg .cockpit-frame, .cockpit-vignette { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+:root.ck-bare .cockpit-frame { display: none; }
+:root.ck-bare[data-skin="cockpit"] .telemetry { display: none; }
 .cockpit-vignette { background: radial-gradient(ellipse 75% 70% at 50% 45%, transparent 55%, rgba(0, 0, 0, .6) 100%); }
 .ck-lights circle { animation: ck-blink 3.2s infinite steps(1); }
 .ck-lights circle:nth-child(2) { animation-delay: -1.1s; animation-duration: 4.4s; }
@@ -85,7 +88,7 @@
     linear-gradient(var(--brk), var(--brk)) bottom right / 2px 16px no-repeat;
 }
 /* cards have no blur (there can be thirty on a screen), so they are a little darker */
-:root[data-skin="cockpit"] .card { background: rgba(4, 13, 22, .8); border-color: rgba(90, 200, 255, .16); position: relative; transition: border-color .2s, box-shadow .2s, transform .2s; }
+:root[data-skin="cockpit"] .card { background: rgba(4, 13, 22, calc(var(--glass-a) + .06)); border-color: rgba(90, 200, 255, .16); position: relative; transition: border-color .2s, box-shadow .2s, transform .2s; }
 :root[data-skin="cockpit"] .card::after {
   content: ""; position: absolute; inset: -1px; pointer-events: none; border-radius: inherit;
   background:
@@ -100,7 +103,7 @@
 :root[data-skin="cockpit"] .card.theory { background: rgba(10, 22, 44, .76); }
 :root[data-skin="cockpit"] .card.next { animation: ck-pulse 2.8s ease-in-out infinite; }
 @keyframes ck-pulse { 0%, 100% { box-shadow: 0 0 0 1px var(--accent) inset, 0 0 8px rgba(70, 224, 255, .15); } 50% { box-shadow: 0 0 0 1px var(--accent) inset, 0 0 24px rgba(70, 224, 255, .4); } }
-:root[data-skin="cockpit"] .hero { background: linear-gradient(120deg, rgba(14, 52, 70, .82), rgba(5, 15, 25, .8) 50%); }
+:root[data-skin="cockpit"] .hero { background: linear-gradient(120deg, rgba(14, 52, 70, calc(var(--glass-a) + .08)), rgba(5, 15, 25, calc(var(--glass-a) + .06)) 50%); }
 :root[data-skin="cockpit"] .handbook { background: rgba(5, 14, 24, .8); }
 :root[data-skin="cockpit"] .hb-section h3 { background: rgba(5, 14, 24, .92); }
 :root[data-skin="cockpit"] .modal { background: rgba(6, 17, 28, .78); }
@@ -159,11 +162,11 @@
 :root[data-skin="cockpit"] :is(.ipbar input, .ipbar select, .worksheet input, .hb-search, .sources select, .hb-pages, .editor) { background: rgba(2, 9, 16, .7); border-radius: 4px; }
 :root[data-skin="cockpit"] .option { background: rgba(5, 15, 25, .6); border-radius: 4px; }
 :root[data-skin="cockpit"] .objectives li { border-radius: 4px; }
-.music-btn .eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
-.music-btn .eq i { width: 3px; height: 4px; background: currentColor; border-radius: 1px; }
-.music-btn.on .eq i { background: var(--accent); box-shadow: 0 0 5px var(--accent); animation: ck-bars 1.1s ease-in-out infinite; }
-.music-btn.on .eq i:nth-child(2) { animation-delay: -.35s; }
-.music-btn.on .eq i:nth-child(3) { animation-delay: -.7s; }
+.bridge-btn .eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+.bridge-btn .eq i { width: 3px; height: 4px; background: currentColor; border-radius: 1px; }
+.bridge-btn.on .eq i { background: var(--accent); box-shadow: 0 0 5px var(--accent); animation: ck-bars 1.1s ease-in-out infinite; }
+.bridge-btn.on .eq i:nth-child(2) { animation-delay: -.35s; }
+.bridge-btn.on .eq i:nth-child(3) { animation-delay: -.7s; }
 @keyframes ck-bars { 0%, 100% { height: 3px; } 50% { height: 12px; } }
 
 /* ---------- windows, terminal, map ---------- */
@@ -190,29 +193,88 @@
 :root[data-skin="cockpit"] :is(.port-label, .dev-label, .dev-sub) { stroke: rgba(3, 10, 18, .9); }
 :root[data-skin="cockpit"] :is(.prose pre, .hb-body pre, .exhibit, .bubble pre, .qhtml pre) { background: rgba(1, 7, 13, .75); }
 
-/* ---------- ship systems panel ---------- */
+/* ---------- inside a lab: cleaner type, rounder glass, live effects ----------
+   Only on a lab screen (main.play.lab), on desktop and phone alike: the lab
+   keeps the plain system font for easy reading at length, and the console and
+   network map glow. The rest of the cockpit keeps its HUD type. */
+:root[data-skin="cockpit"] .play.lab { --radius: 12px; }
+:root[data-skin="cockpit"] .play.lab :is(h2, h3, .btn, .tag, .tab button, .win-title strong, .ticket h3) { font-family: var(--sans); }
+:root[data-skin="cockpit"] .play.lab .tag { letter-spacing: .08em; background: rgba(70, 224, 255, .09); box-shadow: 0 0 10px rgba(70, 224, 255, .12); }
+:root[data-skin="cockpit"] .play.lab .ticket h3 { letter-spacing: .12em; }
+:root[data-skin="cockpit"] .play.lab .ticket h2 { font-size: 19px; text-shadow: 0 0 16px rgba(70, 224, 255, .22); }
+:root[data-skin="cockpit"] .play.lab .btn { border-radius: 8px; letter-spacing: 0; }
+:root[data-skin="cockpit"] .play.lab .workspace { gap: 12px; }
+:root[data-skin="cockpit"] .play.lab .window { border-color: rgba(70, 224, 255, .26); box-shadow: 0 16px 44px rgba(0, 5, 16, .55), inset 0 1px 0 rgba(160, 245, 255, .16), inset 0 0 24px rgba(70, 224, 255, .035); }
+:root[data-skin="cockpit"] .play.lab .win-title { background: linear-gradient(90deg, rgba(16, 44, 72, .66), rgba(7, 19, 36, .45)); border-bottom-color: rgba(70, 224, 255, .22); }
+:root[data-skin="cockpit"] .play.lab .win-title strong { font-size: 11.5px; font-weight: 700; letter-spacing: .1em; color: #bdf6ff; text-shadow: 0 0 10px rgba(70, 224, 255, .35); }
+:root[data-skin="cockpit"] .play.lab .win-dots i { border-radius: 50%; width: 7px; height: 7px; box-shadow: 0 0 6px rgba(70, 224, 255, .45); }
+:root[data-skin="cockpit"] .play.lab .objectives li { border-radius: 8px; }
+:root[data-skin="cockpit"] .play.lab .objectives li.done { box-shadow: 0 0 14px rgba(92, 240, 168, .16), inset 0 0 12px rgba(92, 240, 168, .06); }
+:root[data-skin="cockpit"] .play.lab .objectives li.done .check { box-shadow: 0 0 8px rgba(92, 240, 168, .7); }
+/* the console: glowing prompt, input and log lines; brighter while you type */
+:root[data-skin="cockpit"] .play.lab .win-console:focus-within { border-color: rgba(70, 224, 255, .6); box-shadow: 0 16px 46px rgba(0, 8, 22, .62), 0 0 26px rgba(70, 224, 255, .2), inset 0 1px 0 rgba(160, 245, 255, .24); }
+:root[data-skin="cockpit"] .play.lab .tabs { background: rgba(4, 12, 24, .6); border-bottom-color: rgba(70, 224, 255, .22); }
+:root[data-skin="cockpit"] .play.lab .tab { background: rgba(9, 22, 40, .55); border-color: rgba(70, 224, 255, .2); border-radius: 8px 8px 0 0; }
+:root[data-skin="cockpit"] .play.lab .tab.active { background: rgba(3, 14, 28, .85); border-color: rgba(70, 224, 255, .55); box-shadow: inset 0 2px 0 var(--accent); }
+:root[data-skin="cockpit"] .play.lab .tab.active .tab-name { text-shadow: 0 0 10px rgba(70, 224, 255, .55); }
+:root[data-skin="cockpit"] .play.lab .term { text-shadow: 0 0 8px rgba(120, 255, 220, .2); }
+:root[data-skin="cockpit"] .play.lab .term-prompt { color: #5ff0ff; text-shadow: 0 0 10px rgba(70, 224, 255, .5); }
+:root[data-skin="cockpit"] .play.lab .term-input { text-shadow: 0 0 10px rgba(255, 255, 255, .3); }
+:root[data-skin="cockpit"] .play.lab .term-row.log { color: #ffc566; text-shadow: 0 0 10px rgba(255, 190, 85, .3); }
+:root[data-skin="cockpit"] .play.lab .term-row.warn { text-shadow: 0 0 10px rgba(255, 132, 148, .3); }
+:root[data-skin="cockpit"] .play.lab .term-row.tip { text-shadow: 0 0 10px rgba(146, 220, 255, .25); }
+:root[data-skin="cockpit"] .play.lab :is(.ipbar, .filebar) { background: rgba(7, 20, 38, .66); border-bottom-color: rgba(70, 224, 255, .2); }
+/* the network map: lit links, glowing ports, the open device in amber */
+:root[data-skin="cockpit"] .play.lab .link.up { stroke: rgba(70, 224, 255, .7); }
+:root[data-skin="cockpit"] .play.lab .link.down { stroke: rgba(255, 132, 148, .6); filter: none; }
+:root[data-skin="cockpit"] .play.lab .link.bundled { stroke: var(--green); stroke-dasharray: 10 5; animation: ck-flow 1.6s linear infinite; filter: drop-shadow(0 0 6px rgba(92, 240, 168, .55)); }
+@keyframes ck-flow { to { stroke-dashoffset: -30; } }
+:root[data-skin="cockpit"] .play.lab .port.up { filter: drop-shadow(0 0 5px rgba(92, 240, 168, .85)); }
+:root[data-skin="cockpit"] .play.lab .port.down { filter: drop-shadow(0 0 5px rgba(255, 132, 148, .8)); }
+:root[data-skin="cockpit"] .play.lab .dev.active .dev-body { stroke: var(--amber); filter: drop-shadow(0 0 12px rgba(255, 190, 85, .8)); }
+/* thin cyan scrollbars */
+:root[data-skin="cockpit"] .play.lab * { scrollbar-width: thin; scrollbar-color: rgba(70, 224, 255, .32) rgba(3, 10, 20, .35); }
+
+/* ---------- the Bridge panel ---------- */
 .cockpit-panel {
-  position: fixed; top: calc(var(--topbar) + 8px); right: 12px; z-index: 70; width: min(360px, calc(100vw - 24px));
-  max-height: calc(100dvh - var(--topbar) - 20px); overflow: auto; padding: 14px 16px 16px;
-  background: rgba(5, 15, 25, .86); border: 1px solid rgba(110, 215, 255, .4); border-radius: 5px; color: var(--text);
+  position: fixed; top: calc(var(--topbar) + 8px); right: 12px; z-index: 70; width: min(380px, calc(100vw - 24px));
+  max-height: calc(100dvh - var(--topbar) - 20px); overflow: auto; padding: 12px 16px 16px;
+  background: rgba(5, 15, 25, .88); border: 1px solid rgba(110, 215, 255, .4); border-radius: 6px; color: var(--text);
 }
-.cockpit-panel h3 { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin: 14px 0 8px; }
-.cockpit-panel .eyebrow { margin: 0; }
-.cockpit-panel p { margin: 8px 0 0; }
-.ck-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 8px 0; }
-.ck-now { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 100px; }
-.ck-sources { display: grid; gap: 6px; margin: 10px 0; }
-.ck-radio, .ck-check { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
-.ck-radio:has(input:checked) { border-color: var(--accent); background: rgba(70, 224, 255, .08); }
-.ck-radio.off { opacity: .5; cursor: not-allowed; }
-.ck-radio input, .ck-check input { margin-top: 3px; accent-color: var(--accent); }
-.ck-radio > span, .ck-check > span { display: grid; gap: 2px; }
-.ck-radio strong { font-size: 13.5px; }
-.ck-vol { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 13px; }
-.ck-vol input { flex: 1; accent-color: var(--accent); }
+.cockpit-panel.drop { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 0 30px rgba(70, 224, 255, .35); }
+.ck-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.ck-head h3 { font-size: 17px; margin: 0; }
+.ck-head .eyebrow { margin: 0 0 2px; }
+.ck-sec { padding: 12px 0 2px; }
+.ck-sec + .ck-sec { border-top: 1px solid var(--line); margin-top: 10px; }
+.ck-label { font: 700 11px var(--hud, var(--sans)); letter-spacing: .16em; text-transform: uppercase; color: var(--accent); }
+.ck-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 8px 0; }
+.ck-row.between, .ck-field.between { justify-content: space-between; }
+.ck-pills { display: inline-flex; border: 1px solid var(--line-2); border-radius: 5px; overflow: hidden; }
+.ck-pill { font: 600 12px var(--sans); color: var(--muted); background: transparent; border: 0; padding: 5px 10px; cursor: pointer; }
+.ck-pill + .ck-pill { border-left: 1px solid var(--line-2); }
+.ck-pill.on { background: var(--accent); color: var(--accent-ink); }
+.ck-pill:disabled { opacity: .4; cursor: not-allowed; }
+.ck-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.ck-chip { font: 600 12px var(--sans); color: var(--text); background: rgba(8, 26, 40, .6); border: 1px solid var(--line-2); border-radius: 99px; padding: 4px 11px; cursor: pointer; }
+.ck-chip:hover { border-color: var(--accent); }
+.ck-chip.on { color: var(--accent); border-color: var(--accent); background: rgba(70, 224, 255, .12); box-shadow: 0 0 10px rgba(70, 224, 255, .25); }
+.ck-now { display: grid; gap: 3px; padding: 10px 11px 8px; margin: 8px 0; border: 1px solid var(--line); border-radius: 5px; background: rgba(2, 9, 16, .6); }
+.ck-now strong { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ck-spectrum { width: 100%; height: 36px; display: block; margin-top: 6px; }
+.ck-play { min-width: 84px; }
+.ck-vol { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 90px; font-size: 13px; }
+.ck-vol input, .ck-field input[type="range"] { flex: 1; min-width: 60px; accent-color: var(--accent); }
+.ck-select { width: 100%; margin: 6px 0; font: 12.5px var(--mono); color: var(--text); background: rgba(2, 9, 16, .8); border: 1px solid var(--line-2); border-radius: 5px; padding: 6px 8px; }
+.ck-loader { margin: 10px 0 4px; padding: 10px 11px; border: 1px dashed var(--line-2); border-radius: 5px; background: rgba(70, 224, 255, .04); }
+.ck-loader p { margin: 0; line-height: 1.4; }
+.ck-loader .ck-row { margin: 8px 0 6px; }
+.ck-field { display: grid; gap: 4px; margin: 10px 0; }
+.ck-field.row { display: flex; align-items: center; gap: 8px; }
 
 /* ---------- small screens, reduced motion ---------- */
 @media (max-width: 1180px) { :root[data-skin="cockpit"] .telemetry { display: none; } }
+@media (max-width: 560px) { .cockpit-panel { right: 8px; width: calc(100vw - 16px); } }
 @media (max-width: 900px) { .ck-word { display: none; } }
 @media (prefers-reduced-motion: reduce) {
   :root[data-skin="cockpit"] *, :root[data-skin="cockpit"] *::after, .ck-lights circle { animation: none !important; }

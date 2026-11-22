@@ -19,7 +19,9 @@ import electronUpdater from "electron-updater";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Readable } from "node:stream";
 import { resolveFile, packKind, PACKS, TYPES } from "./files.mjs";
+import { AUDIO_TYPES, scanFolder, steamLibraries, findX3Soundtrack, trackList, musicFile } from "./music.mjs";
 
 const { autoUpdater } = electronUpdater;
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -53,14 +55,65 @@ function seedPacks() {
 }
 
 // ---------------------------------------------------------------- app:// origin
-protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
+protocol.registerSchemesAsPrivileged([{ scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 
 function serve(req) {
+  const music = musicFile(new URL(req.url).pathname, musicFiles);
+  if (music) return streamFile(req, music);
   const file = resolveFile(new URL(req.url).pathname, { appRoot, packDir });
   if (!file) return new Response("Not found", { status: 404, headers: { "content-type": "text/plain" } });
   return fs.promises.readFile(file)
     .then(buf => new Response(buf, { headers: { "content-type": TYPES[path.extname(file)] || "application/octet-stream", "cache-control": "no-store" } }))
     .catch(() => new Response("Not found", { status: 404, headers: { "content-type": "text/plain" } }));
+}
+
+// A music file, with byte ranges so the player can seek and read its length.
+async function streamFile(req, file) {
+  let size;
+  try { size = (await fs.promises.stat(file)).size; } catch { return new Response("Not found", { status: 404 }); }
+  const type = AUDIO_TYPES[path.extname(file).toLowerCase()] || "application/octet-stream";
+  const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.get("range") || "");
+  let start = 0, end = size - 1, status = 200;
+  if (m && (m[1] || m[2])) {
+    if (m[1]) { start = +m[1]; end = m[2] ? Math.min(+m[2], size - 1) : size - 1; } else { start = Math.max(0, size - +m[2]); }
+    if (start > end || start >= size) return new Response(null, { status: 416, headers: { "content-range": `bytes */${size}` } });
+    status = 206;
+  }
+  const headers = { "content-type": type, "accept-ranges": "bytes", "content-length": String(end - start + 1), "cache-control": "no-store" };
+  if (status === 206) headers["content-range"] = `bytes ${start}-${end}/${size}`;
+  return new Response(Readable.toWeb(fs.createReadStream(file, { start, end })), { status, headers });
+}
+
+// ---------------------------------------------------------------- music folder
+// The cockpit view can play a folder of the player's own music from disk (for
+// example a game soundtrack they own). Only the folder's path is remembered;
+// nothing is copied, and the page only ever sees track names and app:// URLs.
+const musicCfg = path.join(userDir, "music.json");
+let musicDir = null, musicFiles = [];
+try { musicDir = JSON.parse(fs.readFileSync(musicCfg, "utf8")).dir || null; } catch { /* none chosen yet */ }
+if (musicDir) musicFiles = scanFolder(musicDir);
+
+function setMusicDir(dir) {
+  const files = dir ? scanFolder(dir) : [];
+  if (dir && !files.length) return { ...musicInfo(), error: "That folder has no music files in it (MP3, OGG, Opus, WAV, FLAC or M4A)." };
+  musicDir = dir; musicFiles = files;
+  try { if (dir) fs.writeFileSync(musicCfg, JSON.stringify({ dir }, null, 2)); else fs.rmSync(musicCfg, { force: true }); } catch (e) { console.error("could not save the music folder", e.message); }
+  return musicInfo();
+}
+function musicInfo() {
+  // a game's "soundtrack" folder is better known by the game's name
+  const name = musicDir && (/^soundtrack$/i.test(path.basename(musicDir)) ? `${path.basename(path.dirname(musicDir))} soundtrack` : path.basename(musicDir));
+  return { folder: name || null, tracks: trackList(musicFiles) };
+}
+async function pickMusicFolder() {
+  const pick = await dialog.showOpenDialog(win, { title: "Choose a folder of music", buttonLabel: "Play this folder", properties: ["openDirectory"] });
+  if (pick.canceled || !pick.filePaths[0]) return { ...musicInfo(), canceled: true };
+  return setMusicDir(pick.filePaths[0]);
+}
+function findSteamMusic() {
+  const found = findX3Soundtrack(steamLibraries({ home: app.getPath("home") }));
+  if (!found) return { ...musicInfo(), error: "No X3 soundtrack was found in your Steam libraries. Use Choose a folder and pick the game's soundtrack folder." };
+  return { ...setMusicDir(found.dir), game: found.game };
 }
 
 // ---------------------------------------------------------------- window
@@ -209,6 +262,10 @@ ipcMain.handle("update:check", () => checkForUpdate());
 ipcMain.handle("update:start", () => startUpdate());
 ipcMain.handle("data:info", () => dataInfo());
 ipcMain.handle("data:import", () => importPack());
+ipcMain.handle("music:get", () => musicInfo());
+ipcMain.handle("music:pick", () => pickMusicFolder());
+ipcMain.handle("music:steam", () => findSteamMusic());
+ipcMain.handle("music:clear", () => setMusicDir(null));
 ipcMain.handle("data:open", () => { fs.mkdirSync(packDir, { recursive: true }); return shell.openPath(userDir); });
 
 // ---------------------------------------------------------------- start

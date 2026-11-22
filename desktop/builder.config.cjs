@@ -34,7 +34,7 @@ module.exports = {
     "index.html", "css/**", "js/**", "content/**",
     "data/none.js", "data/README.md",
     ...(personal ? ["data/questions.js", "data/notes.js"] : []),
-    "desktop/main.mjs", "desktop/files.mjs", "desktop/preload.cjs",
+    "desktop/main.mjs", "desktop/files.mjs", "desktop/music.mjs", "desktop/preload.cjs",
   ],
   // per-user install: no administrator prompt, and updates install without one too
   win: { target: [{ target: "nsis", arch: ["x64"] }] },

@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveFile, packKind } from "../desktop/files.mjs";
+import { scanFolder, vdfLibraries, findX3Soundtrack, trackList, musicFile } from "../desktop/music.mjs";
 
 let fails = 0;
 const ok = (name, cond, extra = "") => { console.log((cond ? "ok   " : "FAIL ") + name + (cond ? "" : "  " + extra)); if (!cond) fails++; };
@@ -48,6 +49,21 @@ ok("only the two known packs are read from the data folder", rel(r("/data/other.
 ok("a question bank is recognised", packKind('window.CCNA_QUESTIONS={"questions":[]}') === "questions.js");
 ok("a handbook is recognised, after a BOM and comments", packKind("﻿// my notes\n// more\nwindow.CCNA_NOTES = [];") === "notes.js");
 ok("any other script is refused", packKind("alert(1); window.CCNA_QUESTIONS = {}") === null && packKind("") === null);
+
+// the music folder (desktop/music.mjs)
+const lib = path.join(tmp, "steam-lib"), sound = path.join(lib, "steamapps", "common", "X3 - Reunion", "soundtrack");
+for (const n of ["00010.mp3", "00002.mp3", "notes.txt", "00100.OGG", "cover.jpg"]) put(path.join(sound, n));
+fs.mkdirSync(path.join(sound, "sub.mp3"), { recursive: true });
+const tracks = scanFolder(sound).map(f => path.basename(f));
+ok("a music folder lists only audio files, in natural order", JSON.stringify(tracks) === JSON.stringify(["00002.mp3", "00010.mp3", "00100.OGG"]), JSON.stringify(tracks));
+ok("a missing music folder has no tracks", scanFolder(path.join(tmp, "nope")).length === 0);
+ok("Steam library paths are read from libraryfolders.vdf", JSON.stringify(vdfLibraries('"libraryfolders"\n{\n "0"\n {\n  "path"\t\t"C:\\\\Program Files (x86)\\\\Steam"\n }\n "1" { "path" "D:\\\\SteamLibrary" }\n}')) === JSON.stringify(["C:\\Program Files (x86)\\Steam", "D:\\SteamLibrary"]));
+const x3 = findX3Soundtrack([path.join(tmp, "other-lib"), lib]);
+ok("an X3 soundtrack is found in a Steam library", x3 && x3.dir === sound && x3.game === "X3 - Reunion");
+ok("no X3 soundtrack in an empty library", findX3Soundtrack([path.join(tmp, "other-lib")]) === null);
+const files = scanFolder(sound), list = trackList(files);
+ok("the page gets track names and app:// addresses, not file paths", list[1].name === "00010" && list[1].url === "app://ccna/music/1" && !JSON.stringify(list).includes("steam-lib"));
+ok("a music address maps to its file, and nothing else does", musicFile("/music/2", files) === files[2] && musicFile("/music/3", files) === null && musicFile("/music/../x", files) === null && musicFile("/music/1x", files) === null);
 
 // the real app folder: every file the page asks for at start is served
 const real = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
