@@ -133,6 +133,20 @@ export default [
   },
 
   {
+    id: "acl-trace", tier: 4, type: "drill", xp: 180, par: 540,
+    title: "First Match Wins",
+    from: "Marcus Lindqvist, Security",
+    subject: "Read an access list the way the router does",
+    brief: [
+      "Before you repair anyone's access list, show me you can read one. Each question gives a list and one packet. Say which line decides its fate, or that no line does.",
+      "Read from the top and stop at the first line where everything matches: protocol, source, destination, port, and for `established` and `echo-reply`, which direction of the conversation the packet belongs to.",
+    ],
+    params: { kind: "acl", count: 10 },
+    skills: ["first match", "wildcard masks", "host and any", "established", "echo and echo-reply", "implicit deny"],
+    debrief: "The router never looks for the best line, only the first. That is why a broad deny placed high hides a permit below it, why `host 192.168.5.0` matches almost nothing, and why a wildcard of 0.0.3.255 quietly takes in four networks.",
+  },
+
+  {
     id: "acl-broken", tier: 4, type: "lab", xp: 340, par: 900,
     title: "The Rule That Never Fires",
     from: "Priya Raman, Service Desk",

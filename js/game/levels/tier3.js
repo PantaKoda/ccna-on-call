@@ -63,6 +63,19 @@ export default [
   },
 
   {
+    id: "vlsm-plan", tier: 3, type: "drill", xp: 180, par: 720,
+    title: "Cut to Fit",
+    from: "Dana Okafor, NOC Team Lead",
+    subject: "Address plans: carving a block and summarising it",
+    brief: [
+      "Two skills for an address plan. First, carve one block into subnets of different sizes: the smallest subnet that fits each segment, handed out largest first. Second, the reverse: find the one route that covers a list of subnets, and say how much else it covers.",
+    ],
+    params: { kind: "vlsm", count: 6 },
+    skills: ["VLSM", "largest first", "route summarisation", "when a summary covers too much"],
+    debrief: "Largest first is what keeps a plan from overlapping: every subnet then starts on a multiple of its own size. A summary is exact only when the subnets number a power of two and the first one starts on a multiple of that number; otherwise the route also claims networks you do not have.",
+  },
+
+  {
     id: "default-route", tier: 3, type: "lab", xp: 240, par: 600,
     title: "The Way Out",
     from: "Priya Raman, Service Desk",
@@ -101,6 +114,20 @@ export default [
       { on: "HQ-R1", cmds: ["enable", "configure terminal", "ip route 0.0.0.0 0.0.0.0 203.0.113.1", "ip route 192.168.50.0 255.255.255.0 10.0.0.2", "end", "write memory"] },
     ],
     debrief: "`show ip route` marks the default as `S*` and prints \"Gateway of last resort\". Routers always prefer the longest matching prefix, so the /24 to the branch beats the /0 default.",
+  },
+
+  {
+    id: "route-lookup", tier: 3, type: "drill", xp: 160, par: 480,
+    title: "Which Way Out?",
+    from: "Dana Okafor, NOC Team Lead",
+    subject: "Reading a routing table the way the router does",
+    brief: [
+      "Half of all routing tickets are solved by reading `show ip route` correctly. For each packet, say what the router does with it. Some tables have a default route and some do not.",
+      "A few questions go one step back: several sources offer a route to the same network, and you say which one the router installs.",
+    ],
+    params: { kind: "routing", count: 10 },
+    skills: ["longest prefix match", "administrative distance", "metric", "default route", "no route"],
+    debrief: "Two questions, two different rules. Which route goes *into* the table: lowest administrative distance, then lowest metric, among routes to the same prefix. Which route a *packet* takes: the longest prefix that contains its address, and nothing else. A /28 learned from RIP beats a /16 static route every time.",
   },
 
   {

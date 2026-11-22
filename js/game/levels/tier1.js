@@ -169,6 +169,20 @@ export default [
   },
 
   {
+    id: "ipv6-sprint", tier: 1, type: "drill", xp: 120, par: 540,
+    title: "Colons and Zeros",
+    from: "Dana Okafor, NOC Team Lead",
+    subject: "IPv6 addresses for the new address plan",
+    brief: [
+      "The new address plan is dual-stack, and half the mistakes in the draft are IPv6 addresses written or read wrongly. Before you review it, show me you can handle them by hand.",
+      "Four kinds of question: write an address in its shortest form, write one out in full, build a modified EUI-64 address from a MAC address, and count the subnets in a prefix.",
+    ],
+    params: { kind: "ipv6", count: 8 },
+    skills: ["shortening an address", "expanding an address", "modified EUI-64", "counting subnets"],
+    debrief: "Two rules cover the shortening: drop leading zeros in every group, and use `::` once, for the longest run of zero groups (the leftmost if two are equal, and never for a single group). For EUI-64, the seventh bit is flipped, not set: a first byte of 02 becomes 00.",
+  },
+
+  {
     id: "exam-1", tier: 1, type: "quiz", xp: 150, par: 600,
     title: "Probation Review",
     from: "Dana Okafor, NOC Team Lead",

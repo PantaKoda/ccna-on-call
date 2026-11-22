@@ -5,7 +5,7 @@ A static web game (plain HTML, CSS, ES modules; no build step, no backend) that 
 ## Commands
 
 - `node tools/serve.mjs` runs the dev server on http://localhost:8080 (`?unlock=all` opens every level).
-- `npm test` plays every lab's scripted solution, runs every variant template over 40 seeds, checks topics, theory and the question bank, and then runs the simulator behaviour tests (`tests/run-sim.mjs`). Run it after any change to `js/engine/`, `js/game/` or `content/`. When the simulator learns a new behaviour, add a check for it to `tests/run-sim.mjs`.
+- `npm test` plays every lab's scripted solution, runs every variant template over 40 seeds, checks topics, theory and the question bank, then runs the simulator behaviour tests (`tests/run-sim.mjs`) and the drill tests (`tests/run-drills.mjs`). Run it after any change to `js/engine/`, `js/game/` or `content/`. When the simulator learns a new behaviour, add a check for it to `tests/run-sim.mjs`. A new drill generator in `js/game/drillgen.js` needs a second, independent calculation of its answers in `tests/run-drills.mjs`.
 - `docker build -t ccna-on-call .` builds the production image; the build runs the tests.
 
 ## Release cycle

@@ -5,9 +5,10 @@ import { h, rich, fmtTime } from "./dom.js";
 import { ipToInt, intToIp, lenMask, netOf, bcastOf } from "../engine/ip.js";
 import { QUESTIONS } from "../game/questions.js";
 import { topicOfQuestion, TOPIC_BY_ID, inExam, questionOnly, v1DomainOf, topicInExam, inBothExams } from "../game/topics.js";
+import { DRILLS, rng, makeDrillQuestion, checkField } from "../game/drillgen.js";
 import { store } from "./store.js";
 
-const rnd = n => Math.floor(Math.random() * n);
+const rnd =n => Math.floor(Math.random() * n);
 
 function header(level, right) {
   return h("header", { class: "drill-head" },
@@ -91,6 +92,90 @@ export function mountSubnet(root, level, { onDone }) {
 
   next();
   return { dirty: () => asked > 0 && n < total, destroy() { clearInterval(timer); } };
+}
+
+// ------------------------------------------------------------ generated drills
+// Route lookup, VLSM and summarisation, IPv6 and access list tracing. The
+// questions come from js/game/drillgen.js; this only shows them and marks them.
+// A question is either a choice between options or a few fields to type into.
+export function mountDrill(root, level, { onDone }) {
+  const { kind, count } = level.params, noun = DRILLS[kind].noun;
+  const x = rng((Math.random() * 2 ** 31) | 0);
+  const start = Date.now();
+  let n = 0, right = 0, asked = 0;
+  const progress = h("span", { class: "stat" });
+  const card = h("div", { class: "drill-card" });
+  root.replaceChildren(h("div", { class: "drill" }, header(level, progress), card));
+  const tick = () => { progress.textContent = `${noun} ${Math.min(n + 1, count)} of ${count} · ${fmtTime((Date.now() - start) / 1000)}`; };
+  const timer = setInterval(tick, 1000);
+
+  function next() {
+    if (n >= count) return done();
+    const q = makeDrillQuestion(kind, x);
+    let checked = false, picked = null;
+    const explain = h("div", { class: "explain", hidden: true });
+    const btn = h("button", { class: "btn primary", type: "submit", disabled: q.kind === "choice" }, "Check");
+    const opts = q.kind !== "choice" ? [] : q.options.map((text, pos) => {
+      const b = h("button", { class: "option", type: "button", "aria-pressed": "false" }, h("span", { class: "letter" }, "ABCDEF"[pos]), h("span", { class: "opt-text" }, text));
+      b.addEventListener("click", () => {
+        if (checked) return;
+        picked = pos;
+        opts.forEach((o, p) => { o.classList.toggle("picked", p === pos); o.setAttribute("aria-pressed", p === pos); });
+        btn.disabled = false;
+      });
+      return b;
+    });
+    const inputs = q.kind !== "fields" ? [] : q.fields.map(f => h("input", { type: "text", spellcheck: "false", autocomplete: "off", autocapitalize: "off", "aria-label": f.label }));
+    const rows = inputs.map((inp, i) => h("div", { class: "field" }, h("label", {}, q.fields[i].label), inp, h("span", { class: "verdict", role: "status" })));
+    const form = h("form", { class: "worksheet wide" },
+      h("p", { class: "drill-q", html: rich(q.prompt) }),
+      q.exhibit ? h("pre", { class: "exhibit" }, q.exhibit) : null,
+      q.kind === "choice" ? h("div", { class: "options" }, opts) : rows,
+      explain, h("div", { class: "actions" }, btn));
+    form.addEventListener("submit", e => {
+      e.preventDefault();
+      if (checked) { n++; next(); return; }
+      checked = true;
+      let allRight = true;
+      if (q.kind === "choice") {
+        asked++;
+        allRight = picked === q.answer;
+        if (allRight) right++;
+        opts[q.answer].classList.add("correct");
+        if (!allRight) opts[picked].classList.add("wrong");
+        opts.forEach(o => { o.disabled = true; });
+      } else {
+        q.fields.forEach((f, i) => {
+          const ok = checkField(f, inputs[i].value);
+          asked++;
+          if (ok) right++; else allRight = false;
+          rows[i].classList.add(ok ? "ok" : "bad");
+          rows[i].querySelector(".verdict").textContent = ok ? "✓ correct" : `✗ ${f.answer}`;
+          inputs[i].readOnly = true;
+        });
+      }
+      explain.hidden = false;
+      explain.replaceChildren(h("strong", { class: allRight ? "ok-text" : "bad-text" }, allRight ? "Correct. " : "Not quite. "), h("span", { html: rich(q.explain) }));
+      btn.disabled = false;
+      btn.textContent = n + 1 >= count ? "Finish" : "Next";
+      btn.focus();
+    });
+    card.replaceChildren(form);
+    if (inputs[0]) inputs[0].focus();
+    tick();
+    card.scrollIntoView({ block: "nearest" });
+  }
+
+  function done() {
+    clearInterval(timer);
+    const pct = Math.round((right / asked) * 100);
+    const seconds = Math.round((Date.now() - start) / 1000);
+    const starCount = pct >= 95 ? 3 : pct >= 80 ? 2 : pct >= 60 ? 1 : 0;
+    onDone({ stars: starCount, seconds, detail: [`${right} of ${asked} answers correct (${pct}%)`, "60% needed to pass"], failText: "You need at least 60% right. Have another go: the questions are different every time." });
+  }
+
+  next();
+  return { dirty: () => asked > 0 && n < count, destroy() { clearInterval(timer); } };
 }
 
 // ------------------------------------------------------------ question bank

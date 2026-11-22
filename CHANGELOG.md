@@ -4,6 +4,19 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- Four new drills. Like Subnet Sprint, each one builds new questions every time, marks them at once and explains the answer.
+  - **Colons and Zeros** (tier 1, IPv6): write an address in its shortest form, write one in full, build a modified EUI-64 address from a MAC address, and count the subnets in a prefix. The MAC addresses include ones where the flipped bit turns off, not on.
+  - **Cut to Fit** (tier 3, subnetting): carve a block into subnets of different sizes, largest first; and find the one route that covers a list of subnets, including lists that no route covers exactly.
+  - **Which Way Out?** (tier 3, routing): given a routing table with overlapping prefixes from different sources, say what the router does with a packet, including tables with no default route. Some questions ask instead which of several routes to the same network gets installed.
+  - **First Match Wins** (tier 4, access lists): given an access list and one packet, say which line decides. The lists include a deny that hides a permit, `host` lines that match almost nothing, wildcards that cover two or four networks, `established`, `echo-reply` and the implicit deny.
+- The drills are part of the career path and appear under their topic. A topic's side panel now says "Labs and drills".
+
+### Changed
+
+- Tests: every drill is generated 600 times and each answer is worked out a second way. The access list drill is checked against the simulator's own access list code.
+
 ## [0.14.0] - 2026-11-22
 
 ### Added

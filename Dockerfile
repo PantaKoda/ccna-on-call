@@ -11,7 +11,7 @@ COPY package.json ./
 COPY js ./js
 COPY content ./content
 COPY tests ./tests
-RUN node tests/run-levels.mjs && node tests/run-sim.mjs
+RUN node tests/run-levels.mjs && node tests/run-sim.mjs && node tests/run-drills.mjs
 
 # Stage 2: the image that runs.
 FROM nginx:stable-alpine

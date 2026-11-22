@@ -114,7 +114,7 @@ code { background: color-mix(in srgb, var(--blue) 10%, transparent); border: 1px
   display: inline-block; font: 700 10.5px var(--sans); letter-spacing: .08em; text-transform: uppercase;
   color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 5px; padding: .15em .5em; margin-right: .6em;
 }
-.tag.subnet { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
+.tag.subnet, .tag.drill { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
 .tag.quiz { color: var(--blue); border-color: color-mix(in srgb, var(--blue) 45%, transparent); }
 .eyebrow { font: 700 11.5px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin: 0 0 .4em; }
 .stars { letter-spacing: 2px; }
@@ -281,6 +281,16 @@ code.big { font-size: 22px; padding: .15em .5em; }
 .worksheet input { font: 15px var(--mono); color: var(--text); background: var(--bg); border: 1px solid var(--line-2); border-radius: 7px; padding: 7px 10px; width: 100%; }
 .field.ok input { border-color: var(--green); } .field.bad input { border-color: var(--red); }
 .verdict { font: 13px var(--mono); }
+/* generated drills: a question, an exhibit to read, then options or fields */
+.drill-q { font-size: 16.5px; margin: 0 0 12px; }
+.exhibit { background: var(--term-bg); color: var(--term); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 0 0 14px; overflow: auto; font-size: 13px; line-height: 1.5; }
+/* long answers (prefixes, IPv6 addresses): the verdict goes on its own line under the input */
+.worksheet.wide .field { grid-template-columns: minmax(150px, 250px) minmax(0, 440px); align-items: start; }
+.worksheet.wide .field label { padding-top: 8px; }
+.worksheet.wide .verdict { grid-column: 2; overflow-wrap: anywhere; }
+.worksheet.wide .verdict:empty { display: none; }
+.worksheet .options { margin-bottom: 4px; }
+.worksheet .explain { margin-top: 12px; }
 .field.ok .verdict { color: var(--green); } .field.bad .verdict { color: var(--red); }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
 .qhtml { font-size: 16.5px; margin-bottom: 14px; }
@@ -339,7 +349,9 @@ code.big { font-size: 22px; padding: .15em .5em; }
   .win-map { height: 300px; }
   .win-console { height: 72vh; }
   .top-title, .top-rank, .top-xp, .theme-btn .theme-word { display: none; }
-  .worksheet .field { grid-template-columns: 1fr; gap: 3px; margin-bottom: 12px; }
+  .worksheet .field, .worksheet.wide .field { grid-template-columns: 1fr; gap: 3px; margin-bottom: 12px; }
+  .worksheet.wide .verdict { grid-column: 1; }
+  .worksheet.wide .field label { padding-top: 0; }
   .win-sub { display: none; }
 }
 /* phones: the top bar keeps every button and drops words instead */

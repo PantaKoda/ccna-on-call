@@ -6,12 +6,12 @@ import { LEVELS, LEVEL_BY_ID, TIERS } from "../game/levels/index.js";
 import { EXAMS, TOPIC_BY_ID, LEVEL_TOPIC, topicsByDomain, topicOnly } from "../game/topics.js";
 import { variantsOf, makeVariant } from "../game/practice.js";
 import { mountLab } from "./labview.js";
-import { mountSubnet, mountQuiz, loadBank, countByTopic, SOURCES } from "./drills.js";
+import { mountSubnet, mountDrill, mountQuiz, loadBank, countByTopic, SOURCES } from "./drills.js";
 import { toggleHandbook, closeHandbook, loadTheory, renderMarkdown, theoryPage } from "./handbook.js";
 import { VERSION } from "../version.js";
 
 const app = document.getElementById("app");
-const TYPE = { lab: "Lab", subnet: "Drill", quiz: "Exam" };
+const TYPE = { lab: "Lab", subnet: "Drill", drill: "Drill", quiz: "Exam" };
 const BADGE = {
   v1: () => h("span", { class: "vbadge v1x", title: "In the v1.1 blueprint, not in v2.0" }, "v1 exclusive"),
   v2: () => h("span", { class: "vbadge v2n", title: "New in the v2.0 blueprint" }, "New in v2"),
@@ -211,7 +211,7 @@ function study(t) {
       h("h2", {}, "After reading"),
       h("button", { class: "btn block" + (studied ? "" : " primary"), onclick: () => { store.setStudied(t.id, !studied); renderSide(); } }, studied ? "✓ Studied (undo)" : "Mark as studied"),
       h("a", { class: "btn block", href: `#/check/${t.id}` }, "Quick check (questions)"),
-      levels.length ? h("h3", {}, "Labs") : null,
+      levels.length ? h("h3", {}, levels.some(l => l.type !== "lab") ? "Labs and drills" : "Labs") : null,
       levels.map(l => store.isUnlocked(l.id)
         ? h("a", { class: "side-link", href: `#/play/${l.id}` }, h("span", {}, l.title), store.result(l.id) ? stars(store.result(l.id).stars) : h("span", { class: "muted small" }, "open"))
         : h("div", { class: "side-link locked" }, h("span", {}, l.title), h("span", { "aria-hidden": "true" }, "🔒"))),
@@ -254,7 +254,7 @@ function play(level) {
   const tag = level.check ? "Check" : level.practice ? "Variant" : TYPE[level.type];
   renderTopbar({ tag, title: level.title });
   main.className = "play " + level.type;
-  const mount = { lab: mountLab, subnet: mountSubnet, quiz: mountQuiz }[level.type];
+  const mount = { lab: mountLab, subnet: mountSubnet, drill: mountDrill, quiz: mountQuiz }[level.type];
   view = mount(main, level, { onDone: res => showResult(level, res), ...(level.type === "lab" ? variantTools(level) : {}) });
 }
 
