@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-22
+
 ### Added
 
 - Press F1 (or Ctrl+K, Cmd+K on a Mac) to open or close the Handbook from anywhere, also while typing in a console. Closing it puts you back in the console where you were typing.
