@@ -338,6 +338,16 @@ code.big { font-size: 22px; padding: .15em .5em; }
   .worksheet .field { grid-template-columns: 1fr; gap: 3px; margin-bottom: 12px; }
   .win-sub { display: none; }
 }
+/* phones: the top bar keeps every button and drops words instead */
+@media (max-width: 560px) {
+  .topbar { gap: 6px; padding: 0 10px; }
+  .topbar .btn { white-space: nowrap; }
+  .exam-word { display: none; }
+  .brand:has(+ .btn) .brand-word { display: none; }   /* a Home link follows, so the mark is enough */
+}
+@media (max-width: 400px) {
+  .brand-pre { display: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; scroll-behavior: auto !important; }
 }

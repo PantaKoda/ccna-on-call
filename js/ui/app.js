@@ -31,11 +31,11 @@ function renderTopbar(where) {
   const t = store.totals(), r = store.rank(), chosen = store.examChosen();
   topbar.replaceChildren(...[
     h("a", { class: "brand", href: "#/", "aria-label": "CCNA: On Call, back to the home screen" },
-      h("span", { class: "brand-mark", "aria-hidden": "true" }, h("i"), h("i"), h("i")), h("span", {}, "CCNA: ", h("b", {}, "On Call"))),
+      h("span", { class: "brand-mark", "aria-hidden": "true" }, h("i"), h("i"), h("i")), h("span", { class: "brand-word" }, h("span", { class: "brand-pre" }, "CCNA: "), h("b", {}, "On Call"))),
     where && where.back !== false ? h("a", { class: "btn ghost small", href: "#/" }, "← Home") : null,
     where ? h("span", { class: "top-title" }, where.tag ? h("span", { class: "tag" + (where.solved ? " done" : "") }, where.tag) : null, where.title) : h("span", { class: "top-title muted" }, "Kestrel Freight · Network Operations"),
     h("span", { class: "spacer" }),
-    chosen ? h("a", { class: "btn small exam-chip", href: "#/exam", title: `Studying for ${EXAMS[store.exam()].name}. Click to change.` }, "Exam ", h("b", {}, EXAMS[store.exam()].short)) : null,
+    chosen ? h("a", { class: "btn small exam-chip", href: "#/exam", title: `Studying for ${EXAMS[store.exam()].name}. Click to change.` }, h("span", { class: "exam-word" }, "Exam "), h("b", {}, EXAMS[store.exam()].short)) : null,
     chosen ? h("span", { class: "top-rank", title: "Your rank" }, r.rank) : null,
     chosen ? h("span", { class: "top-xp" }, `${t.xp} XP`) : null,
     chosen ? h("button", { class: "btn small", onclick: toggleHandbook, title: "Command reference and theory pages" }, "Handbook") : null,
