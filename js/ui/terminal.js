@@ -2,6 +2,7 @@
 // object that exposes prompt, hidden, exec(line), help(line), complete(line).
 
 import { h } from "./dom.js";
+import { keySound } from "./keysound.js";
 
 export class Terminal {
   constructor({ session, exec, onAfter, intro }) {
@@ -15,7 +16,7 @@ export class Terminal {
     this.input = h("input", { class: "term-input", type: "text", spellcheck: "false", autocomplete: "off", autocapitalize: "off", autocorrect: "off", "aria-label": "Command line" });
     this.el = h("div", { class: "term" }, this.out, h("label", { class: "term-line" }, this.promptEl, this.input));
     this.el.addEventListener("mouseup", () => { if (!String(getSelection())) this.focus(); });
-    this.input.addEventListener("keydown", e => this.key(e));
+    this.input.addEventListener("keydown", e => { keySound(e); this.key(e); });
     // IOS answers "?" the moment it is typed. Watching the input event (not the
     // key) also works with on-screen keyboards.
     this.input.addEventListener("input", () => {

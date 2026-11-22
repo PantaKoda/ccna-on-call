@@ -473,3 +473,11 @@ a.side-link:hover { border-color: var(--accent); }
 .port.blocked { fill: var(--gold); }
 .dot.blocked { background: var(--gold); }
 .link.bundled { stroke: var(--accent); stroke-width: 3.5; }
+
+/* ---------- console: typing sounds button ---------- */
+.keys-btn[aria-pressed="true"] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+@media (max-width: 560px) { .keys-word { display: none; } }
+@media (max-width: 560px) {
+  .win-console .win-title { gap: 6px; flex-wrap: wrap; }
+  .win-console .win-title .btn.ghost { padding: .35em .5em; }
+}

@@ -5,6 +5,7 @@ import { Lab } from "../game/lab.js";
 import { isHost } from "../engine/network.js";
 import { ipToInt, intToIp, maskLen } from "../engine/ip.js";
 import { Terminal } from "./terminal.js";
+import { keySoundOn, setKeySound } from "./keysound.js";
 import { Topology } from "./topology.js";
 import { openHandbook } from "./handbook.js";
 import { LEVEL_TOPIC, TOPIC_BY_ID } from "../game/topics.js";
@@ -52,6 +53,18 @@ export function mountLab(root, level, { onDone, actions = [], note = null, badge
 
   const statTime = h("span", { class: "stat" });
   const statCmds = h("span", { class: "stat" });
+  // typing sounds in the consoles; the button shows whether they are on
+  const keysBtn = h("button", { class: "btn ghost small keys-btn", title: "Keyboard sounds while you type in a console", onclick: () => {
+    setKeySound(!keySoundOn());
+    drawKeys();
+    if (active) terms.get(active)?.focus();
+  } });
+  const drawKeys = () => {
+    const on = keySoundOn();
+    keysBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    keysBtn.replaceChildren(h("span", { "aria-hidden": "true" }, "⌨"), h("span", { class: "keys-word" }, on ? " Keys on" : " Keys off"));
+  };
+  drawKeys();
 
   root.replaceChildren(
     h("div", { class: "workspace" },
@@ -61,7 +74,7 @@ export function mountLab(root, level, { onDone, actions = [], note = null, badge
           h("span", { class: "legend" }, h("i", { class: "dot up" }), "up", h("i", { class: "dot blocked" }), "blocked", h("i", { class: "dot down" }), "down")),
         h("div", { class: "win-body map-body" }, topo.el)),
       h("section", { class: "window win-console", "aria-label": "Console" },
-        winTitle("Console", null, statTime, statCmds, h("button", { class: "btn ghost small", onclick: resetLab }, "Reset lab")),
+        winTitle("Console", null, statTime, statCmds, keysBtn, h("button", { class: "btn ghost small", onclick: resetLab }, "Reset lab")),
         tabs, ipBar, fileBar, termHost)));
 
   function winTitle(name, sub, ...extra) {

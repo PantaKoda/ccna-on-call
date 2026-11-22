@@ -10,6 +10,7 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 - The Bridge button in the cockpit view: music and the view outside. The ship's own ambient score is made live by the game in three moods. Or play your own music: a whole folder (such as a game soundtrack) or single files, dropped in or chosen. It has play, pause, next, previous, shuffle, a track list and a live spectrum. Short clips under 25 seconds are skipped. Your files stay on your computer and are never uploaded.
 - The desktop app can find an X3 game's soundtrack in your Steam libraries and play it straight from the game folder, without copying it.
 - The Bridge also picks the planet outside (ochre, ice or ember), how fast the ship rolls (gentle, cinematic or hold), how see-through the glass panels are, and whether the canopy frame and flight readout show. Roll starts on hold if your system asks for reduced motion.
+- Typing sounds for the consoles: press Keys in the console's title bar to hear a mechanical keyboard as you type. It works in both views and is off until you turn it on.
 - In the cockpit view, a lab keeps the plain system font for easy reading, and its console and network map glow: a lit prompt, amber log lines, glowing ports, the open device in amber and flowing EtherChannel links.
 
 ### Fixed
