@@ -16,6 +16,7 @@
 // cockpit then uses space.js instead.
 
 import { PLANETS } from "./space.js";
+import { createTrafficSim, createTrafficRenderer } from "./traffic.js";
 
 // Images made in Blender, relative to index.html. sky and moon are 2:1
 // equirectangular maps, north at the top.
@@ -377,6 +378,10 @@ export function createSpaceGL(canvas, opts = {}) {
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
   const P = { sky: program(gl, SKY_GEN), planet: program(gl, PLANET_GEN), scene: program(gl, SCENE), bright: program(gl, BRIGHT), blur: program(gl, BLUR), final: program(gl, FINAL) };
+  // a trading station and the ships coming and going (traffic.js)
+  const sim = createTrafficSim({ planet: WORLD.pc, radius: WORLD.r });
+  let traffic = null, trafficOn = opts.traffic !== false;
+  try { traffic = createTrafficRenderer(gl, sim); } catch (e) { console.warn("no traffic:", e.message); }
   const draw = (prog, fb, w, h) => { gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.viewport(0, 0, w, h); gl.useProgram(prog.p); gl.drawArrays(gl.TRIANGLES, 0, 3); };
 
   // generated textures (replaced by Blender images when ASSETS lists them)
@@ -471,6 +476,7 @@ export function createSpaceGL(canvas, opts = {}) {
     if (!force) raf = requestAnimationFrame(frame);
     const dt = Math.min(0.1, (now - prev) / 1000); prev = now;
     clock += dt * rate;
+    if (trafficOn) sim.update(dt * rate);
     const ease = 1 - Math.exp(-dt * 2.5);
     look[0] += (lookTo[0] - look[0]) * ease; look[1] += (lookTo[1] - look[1]) * ease;
     if (!force && now - lastDraw < 15) return;
@@ -490,6 +496,7 @@ export function createSpaceGL(canvas, opts = {}) {
     bind(u("uSky"), 0, skyTex); bind(u("uPlanet"), 1, planetTex); bind(u("uRing"), 2, ringTex);
     bind(u("uMoonTex"), 3, moonTex || ringTex); gl.uniform1f(u("uMoonHas"), moonTex ? 1 : 0);
     draw(s, scene.fb, W, H);
+    if (traffic && trafficOn) traffic.draw({ m, W, H, tan, clock, light, planet: w.pc, radius: w.r });
 
     // bloom: the bright parts, blurred at a quarter and an eighth of the size
     gl.useProgram(P.bright.p); bind(P.bright.u("uTex"), 0, scene.tex); draw(P.bright, half.fb, half.w, half.h);
@@ -529,11 +536,13 @@ export function createSpaceGL(canvas, opts = {}) {
   resize();
   run();
   loadAssets();
+  if (traffic) traffic.ready.then(run).catch(e => console.warn(e.message));
 
   return {
     setRate(r) { rate = Math.max(0, +r || 0); if (!rate) lookTo = [0, 0]; run(); },
     setPlanet(id) { if (!known(id) || id === kind) return; kind = id; makePlanet(id); run(); },
     setLight(id) { light = id === "sunrise" ? "sunrise" : "day"; run(); },
+    setTraffic(on) { trafficOn = !!on; run(); },
     destroy() {
       cancelAnimationFrame(raf); raf = 0; clearTimeout(resizeTimer);
       window.removeEventListener("resize", onResize); window.removeEventListener("pointermove", onPointer);

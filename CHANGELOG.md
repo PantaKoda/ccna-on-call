@@ -6,6 +6,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ### Added
 
+- Space traffic in the cockpit view (Full graphics): a trading station turns slowly in the sky while haulers, shuttles and couriers arrive at its dock, leave it and jump away in a flash, and others pass in the distance, with engine glow, trails and blinking lights. Station and traffic on the Bridge turns it off.
+
 - The cockpit view is now drawn on your graphics card: a sharp gas giant at any screen size, rings that cast a shadow on the planet (and the planet on the rings), a glowing atmosphere at its edge, thousands of stars, and the sun blooming through the camera lens with a flare. Choose Light on the Bridge (Graphics) for the previous, lighter view; browsers without WebGL 2 use it automatically.
 - Two new planets made in Blender, Kestrel Prime (warm belts and a great storm) and Cryon (an ice giant), with their own rings, plus a Blender-made sky full of nebulae and a cratered moon. Kestrel Prime is the planet you see first.
 - Sunlight on the Bridge (Full graphics): Day side shows the line between day and night across the planet, and Sunrise puts the sun just breaking over its edge, with a thin lit crescent and a lens streak.
