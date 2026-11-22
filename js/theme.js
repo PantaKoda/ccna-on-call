@@ -16,4 +16,20 @@
       try { localStorage.setItem(KEY, t); } catch (e) { /* storage unavailable */ }
     },
   };
+
+  // The cockpit view (js/ui/cockpit.js) is a skin over either theme: the
+  // attribute is set here too, so a cockpit page never flashes the classic look.
+  var SKIN = "ccna-on-call-skin";
+  var skin = null;
+  try { skin = localStorage.getItem(SKIN); } catch (e) { /* storage unavailable */ }
+  if (skin === "cockpit") document.documentElement.dataset.skin = "cockpit";
+
+  window.ccnaSkin = {
+    get: function () { return document.documentElement.dataset.skin || "classic"; },
+    set: function (s) {
+      if (s === "cockpit") document.documentElement.dataset.skin = "cockpit";
+      else delete document.documentElement.dataset.skin;
+      try { localStorage.setItem(SKIN, s === "cockpit" ? "cockpit" : "classic"); } catch (e) { /* storage unavailable */ }
+    },
+  };
 })();

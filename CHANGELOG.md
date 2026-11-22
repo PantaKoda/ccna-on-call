@@ -4,6 +4,16 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- A cockpit view: press Cockpit in the top bar and the game's screens turn into glass panels in a spaceship orbiting a ringed planet, with the stars and the planet turning slowly behind them. Press Classic to go back. Your progress is the same in both views.
+- Music in the cockpit view, from the Ship button: the ship's own ambient score, made live by the game, or your own music files. Files you choose stay on your computer, kept with your saved data, and are never uploaded.
+- Orbit motion can be turned off in the Ship panel, and is off from the start if your system asks for reduced motion.
+
+### Fixed
+
+- The Drill label on the IPv6 drill's card was drawn as a tall empty box.
+
 ## [0.16.0] - 2026-11-22
 
 ### Added

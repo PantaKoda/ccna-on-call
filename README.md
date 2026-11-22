@@ -21,6 +21,7 @@ It is a static web app (plain HTML, CSS and ES modules, no build step, no backen
 - **Handbook**: a searchable command reference plus every theory page, one click away during any ticket.
 - **Coaching**: when a command is rejected only because you are in the wrong mode, a tip says which mode it belongs in.
 - **Light and dark mode**, following your system setting until you pick one.
+- **Cockpit view**, an optional look: the screens become glass panels in a spaceship orbiting a ringed gas giant, with the view rolling slowly as the ship orbits. The **Ship** button plays the ship's own ambient score (generated live with the Web Audio API, no audio files) or your own music files, which stay on your computer in the browser's storage and are never uploaded. Orbit motion can be turned off, and starts off when the system asks for reduced motion. Code: `js/ui/cockpit.js` (switch, panel, frame), `js/ui/space.js` (the view outside, canvas 2D), `js/ui/music.js` (the score and the player), `css/cockpit.css`.
 
 | Tier | Rank | Topics |
 | --- | --- | --- |

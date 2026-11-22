@@ -52,7 +52,7 @@ ok("any other script is refused", packKind("alert(1); window.CCNA_QUESTIONS = {}
 // the real app folder: every file the page asks for at start is served
 const real = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rr = p => resolveFile(p, { appRoot: real, packDir: path.join(tmp, "empty") });
-ok("the real index.html, styles, theme script and entry module are served", ["/", "/css/style.css", "/js/theme.js", "/js/ui/app.js", "/js/version.js", "/content/theory.md"].every(p => rr(p)));
+ok("the real index.html, styles, theme script and entry module are served", ["/", "/css/style.css", "/css/cockpit.css", "/js/ui/cockpit.js", "/js/theme.js", "/js/ui/app.js", "/js/version.js", "/content/theory.md"].every(p => rr(p)));
 ok("the real question bank or its placeholder is served", path.basename(rr("/data/questions.js") || "") === (fs.existsSync(path.join(real, "data", "questions.js")) ? "questions.js" : "none.js"));
 
 fs.rmSync(tmp, { recursive: true, force: true });

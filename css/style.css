@@ -270,7 +270,7 @@ a.card:hover { border-color: var(--accent); transform: translateY(-1px); }
 .term-input { flex: 1; min-width: 8ch; background: transparent; border: 0; outline: 0; color: var(--term-input); font: inherit; padding: 0; margin: 0; caret-color: var(--accent); }
 
 /* ---------- drills ---------- */
-.drill { max-width: 860px; margin: 0 auto; padding: 22px 16px 60px; }
+.drill:not(.tag) { max-width: 860px; margin: 0 auto; padding: 22px 16px 60px; }
 .drill-head { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; margin-bottom: 16px; }
 .drill-head h2 { font-size: 22px; margin: 8px 0; }
 .drill-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }

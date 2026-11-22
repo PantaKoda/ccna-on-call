@@ -10,6 +10,7 @@ import { mountSubnet, mountDrill, mountQuiz, loadBank, countByTopic, SOURCES } f
 import { toggleHandbook, closeHandbook, loadTheory, renderMarkdown, theoryPage } from "./handbook.js";
 import { VERSION } from "../version.js";
 import { updateButton, storageNote, desktopLinks } from "./desktop.js";
+import { isCockpit, cockpitButton, cockpitExtras } from "./cockpit.js";
 
 const app = document.getElementById("app");
 const TYPE = { lab: "Lab", subnet: "Drill", drill: "Drill", quiz: "Exam" };
@@ -41,7 +42,9 @@ function renderTopbar(where) {
     chosen ? h("span", { class: "top-rank", title: "Your rank" }, r.rank) : null,
     chosen ? h("span", { class: "top-xp" }, `${t.xp} XP`) : null,
     chosen ? h("button", { class: "btn small", onclick: toggleHandbook, title: "Command reference and theory pages" }, "Handbook") : null,
-    themeButton(where),
+    ...cockpitExtras(),
+    cockpitButton(() => renderTopbar(where)),
+    isCockpit() ? null : themeButton(where),
   ].filter(Boolean));
 }
 
