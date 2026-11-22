@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-22
+
 ### Added
 
 - A desktop app for Windows, macOS and Linux, with the same game as the web version. Installers are attached to every GitHub release from now on.
