@@ -155,5 +155,31 @@ const ospfLab = () => new Lab({
   run(lab, "PC1", ["exit", "ssh -l oper 10.0.0.1", "Lab-Pw2"]);
   ok("an ordinary user lands at >", lab.session("PC1").remote && lab.session("PC1").remote.mode === "user");
 }
+// ---- access lists: return traffic, and where a list is applied
+{
+  const lab = new Lab({
+    id: "t5", topology: {
+      devices: [
+        { name: "R1", kind: "router", config: ["interface g0/0", "ip address 10.1.0.1 255.255.255.0", "no shutdown", "interface g0/1", "ip address 10.2.0.1 255.255.255.0", "no shutdown", "exit",
+          "ip access-list extended BACK-IN", "permit tcp any any established", "exit", "interface g0/1", "ip access-group BACK-IN in"] },
+        { name: "IN", kind: "pc", ip: { mode: "static", ip: "10.1.0.10", mask: "255.255.255.0", gw: "10.1.0.1" } },
+        { name: "OUT", kind: "server", services: ["http"], ip: { mode: "static", ip: "10.2.0.10", mask: "255.255.255.0", gw: "10.2.0.1" } },
+      ],
+      links: ["R1:g0/0 IN", "R1:g0/1 OUT"],
+    }, objectives: [],
+  });
+  const IN = 0x0a01000a, OUT = 0x0a02000a, web = { proto: "tcp", dport: 80 }, st = () => lab.net.st;
+  ok("established lets the answer to an inside TCP session back in", st().reach("IN", OUT, web).ok);
+  ok("but not a session started from outside", !st().reach("OUT", IN, web).ok);
+  ok("and not a ping reply", !st().reach("IN", OUT).ok);
+  run(lab, "R1", cfg("ip access-list extended BACK-IN", "permit icmp any any echo-reply"));
+  ok("echo-reply lets the ping reply in", st().reach("IN", OUT).ok);
+  ok("but a ping from outside is still refused", !st().reach("OUT", IN).ok);
+  const acl = run(lab, "R1", ["show access-lists"]);
+  ok("show access-lists prints both keywords", /any any established/.test(acl) && /any any echo-reply/.test(acl), acl);
+  const sii = run(lab, "R1", ["show ip interface g0/1"]);
+  ok("show ip interface names the list and its direction", /Inbound  access list is BACK-IN/.test(sii) && /Outgoing access list is not set/.test(sii), sii);
+  ok("established is refused on a UDP line", /Invalid/.test(run(lab, "R1", cfg("ip access-list extended BACK-IN", "permit udp any any established"))));
+}
 console.log(fails ? `\n${fails} FAILED` : "\nall simulator checks pass");
 process.exit(fails ? 1 : 0);

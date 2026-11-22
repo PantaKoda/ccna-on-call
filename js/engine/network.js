@@ -160,6 +160,11 @@ function aclEntryMatch(acl, e, pkt) {
   if (acl.type === "standard") return specMatch(e.src, pkt.src);
   if (e.proto !== "ip" && e.proto !== pkt.proto) return false;
   if (!specMatch(e.src, pkt.src) || !specMatch(e.dst, pkt.dst)) return false;
+  // "established" matches only packets of a conversation that is already open
+  // (the reply); "echo" and "echo-reply" tell the two halves of a ping apart
+  if (e.est && !pkt.reply) return false;
+  if (e.icmp === "echo" && pkt.reply) return false;
+  if (e.icmp === "echo-reply" && !pkt.reply) return false;
   return portMatch(e.sport, pkt.sport) && portMatch(e.dport, pkt.dport);
 }
 // An applied ACL that doesn't exist (or is empty) permits everything, as in IOS.
@@ -843,7 +848,7 @@ function compute(net) {
     const tcpish = proto === "tcp" || proto === "udp";
     const req = forward(from, { src, dst, proto, sport: tcpish ? 49152 : null, dport: tcpish ? opts.dport : null }, ctx);
     if (!req.ok) return { ...req, stage: "request" };
-    const rep = forward(req.dev, { src: req.pkt.dst, dst: req.pkt.src, proto, sport: req.pkt.dport, dport: req.pkt.sport }, ctx);
+    const rep = forward(req.dev, { src: req.pkt.dst, dst: req.pkt.src, proto, sport: req.pkt.dport, dport: req.pkt.sport, reply: true }, ctx);
     if (!rep.ok) return { ...rep, stage: "reply", target: req.dev, reqHops: req.hops };
     if (rep.dev !== from) return { ok: false, stage: "reply", reason: "notforme", at: rep.dev, hops: rep.hops, target: req.dev, reqHops: req.hops };
     return { ok: true, target: req.dev, hops: req.hops, back: rep.hops };

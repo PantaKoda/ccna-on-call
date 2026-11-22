@@ -1641,6 +1641,23 @@ To limit who may open SSH or Telnet sessions to the device itself, apply a stand
 - **The router's own traffic.** An outbound ACL filters packets the router forwards, not packets the router creates itself. A ping typed on the router is not stopped by that router's outbound ACL, so test from a host.
 - **Return traffic.** An ACL checks each packet by itself and does not remember connections. If you filter inbound from the Internet, replies to sessions your users started must be permitted too. For TCP, `permit tcp any any established` matches only packets that belong to a conversation already open (ACK or RST set).
 
+## When an access list does the wrong thing
+
+A broken access list gives no error: every line is valid, and the list simply does something other than what was meant. Work from what it does, not from what it says.
+
+1. **Test first.** From a host, run the exact traffic the policy talks about: a ping, and a `curl` to the port that should be open. Write down what works and what does not.
+2. **Find where the list is.** `show ip interface g0/1` names the list applied to the interface in each direction. A list applied `out` when it was meant `in` filters the traffic going *to* those hosts and lets everything *from* them through.
+3. **Ask the counters.** After a test, `show access-lists` shows which line counted the packet. If a line that should have matched shows no matches, a line above it took the traffic first.
+4. **Read the lines against the policy**, with the four questions in the table below.
+5. **Follow the answer back.** A list on the Internet link that permits nothing by name also drops the replies to your own users. Ping replies need `permit icmp any any echo-reply`, and TCP replies need `permit tcp any any established`. "Ping works but no page loads" is the second line missing; the reverse is the first.
+
+| Question | What the fault looks like |
+| --- | --- |
+| Is the order right? | A broad `deny` above a narrow `permit`: the permit never fires |
+| Is the port right? | The permit counts nothing, and the traffic falls through to a deny |
+| Is the wildcard right? | `host 192.168.10.0` in the output means the wildcard was 0.0.0.0: the line matches one address, not the subnet |
+| What happens to everything else? | No `permit ip any any` at the end: the invisible deny drops all that is left |
+
 ## Check your work
 
 `show access-lists` shows each line with a **match counter**. Send test traffic and watch which line counts up; that tells you which rule the packet really hit.

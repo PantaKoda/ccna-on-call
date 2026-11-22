@@ -4,6 +4,14 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- New lab "The Rule That Never Fires" (tier 4), after "Guests Stay in the Lobby". Two access lists were edited overnight and three complaints came in: guests cannot open the intranet page, a guest laptop can ping staff PCs, and nobody can load a website although pings to the Internet work. Every line is valid, so there is no error to read: you test from the PCs, read the match counters and repair the lists by sequence number.
+- A variant template for it with eight possible faults, two per variant: a deny above the permit it shadows, the wrong port, a wildcard of 0.0.0.0, a missing final permit, a list applied in the wrong direction, and on the Internet link a missing `established` line, a missing `echo-reply` line, or the list applied outbound.
+- `established` and `echo-reply` now do what they say in an access list: the first matches only the replies of a TCP session, the second only ping replies. Before, both keywords were accepted and ignored.
+- `show ip interface` and `show ip interface <interface>`, which name the access list applied in each direction.
+- Theory: "When an access list does the wrong thing" on the access list page. Five new questions on the same faults; the bank now has 196. New handbook rows for editing by sequence number and for return traffic.
+
 ## [0.11.0] - 2026-11-22
 
 ### Added

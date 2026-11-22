@@ -65,8 +65,7 @@ const SECTIONS = [
     ["ip route 0.0.0.0 0.0.0.0 203.0.113.1", "config", "Default route"],
     ["ip route 10.2.0.0 255.255.255.0 10.0.13.2 200", "config", "Floating static: only used when better routes are gone"],
     ["show ip route", ">", "The routing table: C connected, S static, O OSPF, * default"],
-    ["show ip route ospf", ">", "Only the routes from one source (also static, connected)"],
-    ["traceroute 10.2.0.10", ">", "The routers on the way to a destination"],
+    ["show ip route ospf", ">", "Only the routes from one source (also static, connected)"],    ["traceroute 10.2.0.10", ">", "The routers on the way to a destination"],
   ]],
   ["OSPF", ["Command", "Where", "What it does"], [
     ["router ospf 1", "config", "Start OSPF process 1 (the number is local to the router)"],
@@ -110,7 +109,12 @@ const SECTIONS = [
     ["permit ip any any", "acl", "Allow the rest; without it the implicit deny drops everything else"],
     ["ip access-group GUEST-IN in", "interface", "Apply the ACL to traffic entering the interface"],
     ["access-class 10 in", "line", "Limit who may open Telnet or SSH sessions to the device"],
+    ["15 permit tcp any host 10.0.0.10 eq 443", "acl", "Insert a line at sequence number 15, between 10 and 20"],
+    ["no 20", "acl", "Remove the line with sequence number 20"],
+    ["permit tcp any any established", "acl", "Let the replies of TCP sessions through, but no new sessions"],
+    ["permit icmp any any echo-reply", "acl", "Let ping replies through, but no pings"],
     ["show access-lists", ">", "ACL lines with match counters"],
+    ["show ip interface g0/1", ">", "Which access list filters the interface, and in which direction"],
   ]],
   ["SSH and remote access", ["Command", "Where", "What it does"], [
     ["ip domain-name example.lan", "config", "Needed before RSA keys can be generated"],

@@ -1,5 +1,5 @@
 import { C } from "../checks.js";
-import { ansibleRollout, relayLab } from "../practice.js";
+import { ansibleRollout, relayLab, aclFaultLab } from "../practice.js";
 
 const M24 = "255.255.255.0";
 const M30 = "255.255.255.252";
@@ -130,6 +130,15 @@ export default [
     ],
     solution: [{ on: "R1", cmds: ["enable", "configure terminal", "ip access-list extended GUEST-IN", "permit tcp 192.168.20.0 0.0.0.255 host 10.0.0.10 eq 80", "deny ip 192.168.20.0 0.0.0.255 10.0.0.0 0.0.0.255", "deny ip 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255", "permit ip any any", "interface g0/1", "ip access-group GUEST-IN in", "end"] }],
     debrief: "Extended ACLs belong close to the source so unwanted traffic is dropped before it is routed. `show access-lists` shows a match counter on every line, which tells you which rule a packet actually hit.",
+  },
+
+  {
+    id: "acl-broken", tier: 4, type: "lab", xp: 340, par: 900,
+    title: "The Rule That Never Fires",
+    from: "Priya Raman, Service Desk",
+    skills: ["show access-lists", "match counters", "show ip interface", "sequence numbers", "wildcard masks", "established", "echo-reply"],
+    ...aclFaultLab({ site: "HQ", staff: 10, guest: 20, servers: 0, port: 80, who: "GUEST", guestFaults: ["order", "wildcard"], wanFault: "noest" }),
+    debrief: "None of these faults produced an error message: every line was valid IOS. An access list is judged by what it does, so test first and let the match counters tell you which line each packet hit. Three things to read for every time: the order, because the first match wins; the wildcard, because one wrong octet changes who a line applies to; and the way back, because an answer has to get through the lists too.",
   },
 
   {

@@ -553,6 +553,95 @@ export function ospfTuneLab({ site, office, servers, core, links, steer, ref, co
   };
 }
 
+// ---------------------------------------------------------------- broken access lists
+// One router and two access lists that used to work, with faults typed into them.
+//   guest faults (the list on the guest interface)
+//     order      the broad deny sits above the narrow permit, so the permit never fires
+//     port       the permit names the wrong port
+//     wildcard   the staff deny has wildcard 0.0.0.0 and matches a single address
+//     nopermit   the final "permit ip any any" is missing
+//     direction  the list is applied outbound instead of inbound
+//   wan fault (the list on the Internet link)
+//     noest      no "established" line: pings come back, web pages do not
+//     noecho     no "echo-reply" line: web pages load, pings fail
+//     out        the list is applied outbound instead of inbound
+export function aclFaultLab({ site, staff, guest, servers, port, who, guestFaults, wanFault }) {
+  const a = `192.168.${staff}`, b = `192.168.${guest}`, s = `10.${servers}.0`, srv = `${s}.10`, web = "198.51.100.10";
+  const has = f => guestFaults.includes(f);
+  const G = `${who}-IN`, W = "INTERNET-IN", low = who.toLowerCase(), gpc = `PC-${who}`, wrongPort = port === 80 ? 8080 : 80;
+  const url = `${port === 443 ? "https" : "http"}://${srv}${port === 8080 ? ":8080" : ""}`;
+  const permit = p => `permit tcp ${b}.0 0.0.0.255 host ${srv} eq ${p}`;
+  const denySrv = `deny ip ${b}.0 0.0.0.255 ${s}.0 0.0.0.255`, denyStaff = w => `deny ip ${b}.0 0.0.0.255 ${a}.0 ${w}`;
+  const EST = "permit tcp any any established", ECHO = "permit icmp any any echo-reply";
+  const first = permit(has("port") ? wrongPort : port);
+  const config = [
+    ...ifc("g0/0", `${a}.1`, M24), ...ifc("g0/1", `${b}.1`, M24), ...ifc("g0/2", `${s}.1`, M24), ...ifc("s0/0/0", "203.0.113.2", M30), "exit", "ip route 0.0.0.0 0.0.0.0 203.0.113.1",
+    `ip access-list extended ${G}`, ...(has("order") ? [denySrv, first] : [first, denySrv]), denyStaff(has("wildcard") ? "0.0.0.0" : "0.0.0.255"), ...(has("nopermit") ? [] : ["permit ip any any"]), "exit",
+    `ip access-list extended ${W}`, ...(wanFault === "noest" ? [] : [EST]), ...(wanFault === "noecho" ? [] : [ECHO]), "exit",
+    "interface g0/1", `ip access-group ${G} ${has("direction") ? "out" : "in"}`, "interface s0/0/0", `ip access-group ${W} ${wanFault === "out" ? "out" : "in"}`,
+  ];
+
+  // what the service desk heard, the last hint, and the commands that put it right
+  const seqPermit = has("order") ? 20 : 10;
+  const guestInfo = {
+    order: [`${cap(low)} users can no longer open the internal server page.`, `In ${G}, the deny for the whole server LAN sits above the permit for port ${port}, so the permit never gets a turn. Remove the deny with \`no 10\` and put it back lower down with \`25 ${denySrv}\`.`, ["no 10", `25 ${denySrv}`]],
+    port: [`${cap(low)} users can no longer open the internal server page.`, `In ${G}, the permit names port ${wrongPort}, and the server listens on ${port}. Remove that line by its number and enter it again with the right port.`, [`no ${seqPermit}`, `${seqPermit} ${permit(port)}`]],
+    wildcard: [`A ${low} laptop was seen pinging staff PCs.`, `In ${G}, the staff deny ends in \`host ${a}.0\`. Its wildcard was typed as 0.0.0.0, so it matches one address that no PC has. Replace line 30 with the wildcard 0.0.0.255.`, ["no 30", `30 ${denyStaff("0.0.0.255")}`]],
+    nopermit: [`${cap(low)} users have lost their Internet access.`, `${G} no longer ends with \`permit ip any any\`, so the invisible deny at the end drops everything the lines above did not permit, Internet traffic included.`, ["permit ip any any"]],
+    direction: [`A scan from the ${low} network reached the staff PCs and every server.`, `${G} is applied \`out\` on G0/1, where it sees traffic going to the ${low} hosts instead of coming from them. Remove it with \`no ip access-group ${G} out\` and apply it \`in\`.`, null],
+  };
+  const wanInfo = {
+    noest: ["Nobody inside can load a website, although pings to the Internet work.", `${W} lets ping replies back in but has no line for TCP. Add \`${EST}\`.`, [EST]],
+    noecho: ["Pings to the Internet fail for everyone, although websites load.", `${W} lets TCP replies back in but not ping replies. Add \`${ECHO}\`.`, [ECHO]],
+    out: ["Nobody inside reaches the Internet at all, and the security team saw an outside address reach an internal PC.", `${W} is applied \`out\` on S0/0/0, so it filters what leaves and lets everything in. Remove it with \`no ip access-group ${W} out\` and apply it \`in\`.`, null],
+  };
+  const guestLines = guestFaults.flatMap(f => guestInfo[f][2] || []), wanLines = (wanInfo[wanFault] || [])[2] || [];
+  const fix = [
+    ...(guestLines.length ? [`ip access-list extended ${G}`, ...guestLines, "exit"] : []),
+    ...(wanLines.length ? [`ip access-list extended ${W}`, ...wanLines, "exit"] : []),
+    ...(has("direction") ? ["interface g0/1", `no ip access-group ${G} out`, `ip access-group ${G} in`] : []),
+    ...(wanFault === "out" ? ["interface s0/0/0", `no ip access-group ${W} out`, `ip access-group ${W} in`] : []),
+  ];
+  const complaints = [...new Set([...guestFaults.map(f => guestInfo[f][0]), ...(wanInfo[wanFault] ? [wanInfo[wanFault][0]] : [])])];
+  const inboundOnly = (net, n, name) => { const i = net.devs.R1.ifaces[n]; return i.aclIn === name && !i.aclOut && !!net.devs.R1.acls[name]; };
+
+  return {
+    subject: "Complaints after last night's access list change",
+    brief: [
+      `Two access lists on **${site}-R1** were edited in last night's change window, and the change record says only "tidied up the ACLs". The policy itself was fine, so do not redesign it: find what was changed and put it right.`,
+      `**The policy.** ${cap(low)} hosts may use the internal server on **TCP port ${port}** and nothing else on the server LAN. They may reach nothing on the staff LAN, and they keep their Internet access. Staff are not restricted. From the Internet, only answers to conversations started inside may come in: the return traffic of TCP sessions, and ping replies.`,
+      `**This morning's complaints.** ${complaints.join(" ")} Each complaint has one cause.`,
+    ],
+    details: [[`${cap(low)} LAN`, `${b}.0/24 on G0/1 (${gpc} is .10)`], ["Staff LAN", `${a}.0/24 on G0/0 (PC-STAFF is .10)`], ["Server LAN", `${s}.0/24 on G0/2`],
+      ["Internal server", `${srv}, TCP ${port}: curl ${url}`], ["Internet test", `${web}: ping it, and curl http://${web}`], ["Access lists", `${G} on G0/1, ${W} on S0/0/0`]],
+    topology: {
+      devices: [
+        { name: "R1", kind: "router", hostname: `${site}-R1`, x: 480, y: 220, config },
+        { name: "ISP", kind: "router", hostname: "ISP", x: 800, y: 220, locked: true, note: "Internet", config: [...ifc("s0/0/0", "203.0.113.1", M30), ...ifc("g0/0", "198.51.100.1", M24), "exit", "ip route 192.168.0.0 255.255.0.0 203.0.113.2", "ip route 10.0.0.0 255.0.0.0 203.0.113.2"] },
+        pc("PC-STAFF", 180, 110, `${a}.10`, M24, `${a}.1`), pc(gpc, 180, 340, `${b}.10`, M24, `${b}.1`),
+        { name: "SRV1", kind: "server", x: 480, y: 440, note: "Internal server", services: ["http", "https", "8080"], ip: { mode: "static", ip: srv, mask: M24, gw: `${s}.1` } },
+        { name: "WEB", kind: "server", x: 800, y: 440, note: "A public website", services: ["http", "https"], ip: { mode: "static", ip: web, mask: M24, gw: "198.51.100.1" } },
+      ],
+      links: ["R1:g0/0 PC-STAFF", `R1:g0/1 ${gpc}`, "R1:g0/2 SRV1", "R1:s0/0/0 ISP:s0/0/0", "ISP:g0/0 WEB"],
+    },
+    objectives: [
+      { text: `${gpc} can use the internal server on TCP ${port}`, check: C.tcp(gpc, srv, port) },
+      { text: `${gpc} cannot ping the server or the staff PC`, check: C.all(C.noPing(gpc, srv), C.noPing(gpc, `${a}.10`), C.ifaceUp("R1", "g0/0"), C.ifaceUp("R1", "g0/2")) },
+      { text: `${gpc} reaches the Internet: the ping and the web page`, check: C.all(C.ping(gpc, web), C.tcp(gpc, web, 80)) },
+      { text: "PC-STAFF is unrestricted: it reaches the server and the Internet (ping and web page)", check: C.all(C.ping("PC-STAFF", srv), C.ping("PC-STAFF", web), C.tcp("PC-STAFF", web, 80)) },
+      { text: "Nothing on the Internet can start a conversation with an inside host", check: C.all(C.noPing("WEB", `${a}.10`), C.noTcp("WEB", srv, port), C.ifaceUp("R1", "s0/0/0")) },
+      { text: `${G} is applied inbound on G0/1 and ${W} inbound on S0/0/0, and nowhere else on those interfaces`, check: net => inboundOnly(net, "GigabitEthernet0/1", G) && inboundOnly(net, "Serial0/0/0", W) },
+      { text: "The repaired configuration is saved", check: C.savedChanged("R1") },
+    ],
+    hints: [
+      "Test before you read. From each PC, run the ping and the `curl` from the ticket and note what fails. Then run `show access-lists` on the router: the match counters show which line each test really hit. A line that should have matched but shows no matches has another line above it taking the traffic first.",
+      "`show ip interface g0/1` and `show ip interface s0/0/0` name the list on each interface and its direction: `in` filters packets arriving there. Then read each list against the policy: the order (the first match wins), the port, the wildcard mask (a `host` in the output means the wildcard was 0.0.0.0), and whether the list ends by permitting what is left. For the Internet list, ask what the answer to a ping and the answer to a web request look like on their way back in.",
+      [...guestFaults.map(f => guestInfo[f][1]), ...(wanInfo[wanFault] ? [wanInfo[wanFault][1]] : [])].join(" "),
+    ],
+    solution: [{ on: "R1", cmds: [...cfg(...fix), "write memory"] }],
+  };
+}
+
 // ---------------------------------------------------------------- generators
 const pickVlans = x => { const ids = x.sample(VLAN_IDS, 2).sort((m, n) => m - n), names = x.sample(VLAN_NAMES, 2); return ids.map((id, i) => ({ id, name: names[i] })); };
 const CHANNEL_PORTS = [["g0/1", "g0/2"], ["fa0/7", "fa0/8"], ["fa0/5", "fa0/6"], ["fa0/6", "fa0/7", "fa0/8"], ["fa0/3", "fa0/4", "fa0/5"]];
@@ -1104,6 +1193,14 @@ const SKILLS = [
 
   // ---------- access lists
   {
+    id: "acl-fault", topic: "acl", name: "Find the faults in two access lists", par: 720,
+    gen(x) {
+      const [staff, guest] = x.sample(Array.from({ length: 200 }, (_, i) => i + 10), 2);
+      return aclFaultLab({ site: x.pick(SITES), staff, guest, servers: x.int(0, 200), port: x.pick([80, 443, 8080]), who: x.pick(["GUEST", "CONTRACTOR", "IOT", "LAB"]),
+        guestFaults: [x.pick(["order", "port", "wildcard", "nopermit", "direction"])], wanFault: x.pick(["noest", "noecho", "out"]) });
+    },
+  },
+  {
     id: "acl-filter", topic: "acl", name: "Filter traffic with an access list", par: 720,
     gen(x) {
       const std = x.bool(0.4), [oa, ob, os] = x.sample(Array.from({ length: 200 }, (_, i) => i + 10), 3), site = x.pick(SITES);
@@ -1268,7 +1365,7 @@ const AFTER = {
   "cli-name": "first-console", "cli-setup": "lock-it-down", "addr-lan": "desk-move", "addr-fault": "desk-move", "addr-svi": "switch-mgmt",
   "vlan-access": "vlans-101", "vlan-trunk": "trunk-line", "vlan-fault": "trunk-line", roas: "router-on-a-stick", "port-sec": "port-security",
   "static-chain": "static-routes", "static-default": "default-route", "ospf-build": "ospf-single-area", "ospf-fault": "ospf-broken", "ospf-tune": "ospf-tuning",
-  "dhcp-pool": "dhcp-pools", "nat-pat": "nat-edge", "acl-filter": "acl-guard", "ssh-setup": "ssh-hardening",
+  "dhcp-pool": "dhcp-pools", "nat-pat": "nat-edge", "acl-filter": "acl-guard", "acl-fault": "acl-broken", "ssh-setup": "ssh-hardening",
 };
 for (const k of SKILLS) k.after = AFTER[k.id];
 

@@ -200,13 +200,15 @@ function parseAclRule(type, text) {
   if (tcpish) { const p = parsePortSpec(toks, i); if (!p) return null; dport = p.pm; i = p.i; }
   const tail = toks.slice(i).map(x => x.toLowerCase());
   if (tail.some(x => !["log", "established", "echo", "echo-reply"].includes(x))) return null;
-  return { action: act, proto, src: s.spec, dst: d.spec, sport, dport };
+  const est = tail.includes("established"), icmp = tail.find(x => x.startsWith("echo")) || null;
+  if ((est && proto !== "tcp") || (icmp && proto !== "icmp")) return null;      // each keyword belongs to one protocol
+  return { action: act, proto, src: s.spec, dst: d.spec, sport, dport, ...(est ? { est } : {}), ...(icmp ? { icmp } : {}) };
 }
 const specText = (s, standard) => s.any ? "any" : s.wild === 0 ? (standard ? intToIp(s.ip) : `host ${intToIp(s.ip)}`) : `${intToIp(s.ip)} ${intToIp(s.wild)}`;
 const portText = pm => !pm ? "" : pm.op === "range" ? ` range ${pm.n} ${pm.m}` : ` ${pm.op} ${PORT_NAMES[pm.n] || pm.n}`;
 function aclRuleText(type, e) {
   if (type === "standard") return `${e.action} ${specText(e.src, true)}`;
-  return `${e.action} ${e.proto} ${specText(e.src)}${portText(e.sport)} ${specText(e.dst)}${portText(e.dport)}`;
+  return `${e.action} ${e.proto} ${specText(e.src)}${portText(e.sport)} ${specText(e.dst)}${portText(e.dport)}${e.est ? " established" : ""}${e.icmp ? " " + e.icmp : ""}`;
 }
 const aclTypeOfNumber = n => (n >= 1 && n <= 99) || (n >= 1300 && n <= 1999) ? "standard" : (n >= 100 && n <= 199) || (n >= 2000 && n <= 2699) ? "extended" : null;
 function addAclRule(d, name, type, text, seq) {
@@ -1045,6 +1047,23 @@ const NEED_PRIV = INVALID + '\nTip: this command needs privileged mode. Type "en
 show("running-config", s => needPriv(s) ? `Building configuration...\n\nCurrent configuration : ${runningConfig(s.dev).length} bytes\n${runningConfig(s.dev)}` : NEED_PRIV);
 show("startup-config", s => !needPriv(s) ? NEED_PRIV : s.dev.startup || "startup-config is not present");
 show("ip interface brief", showIpIntBrief);
+// The layer 3 view of an interface: its address, helper and, above all, which access list filters it in each direction.
+function showIpInterface(s, only) {
+  const d = s.dev, out = [];
+  for (const n of d.ifOrder) {
+    const i = d.ifaces[n];
+    if ((only && n !== only) || i.sw) continue;
+    const st = s.net.st.status(d.name, n);
+    out.push(`${n} is ${!st.admin ? "administratively down" : st.up ? "up" : "down"}, line protocol is ${st.up ? "up" : "down"}`);
+    if (i.ip == null) { out.push("  Internet protocol processing disabled"); continue; }
+    out.push(`  Internet address is ${intToIp(i.ip)}/${maskLen(i.mask)}`, "  Broadcast address is 255.255.255.255", "  MTU is 1500 bytes",
+      `  Helper address is ${i.helpers.length ? i.helpers.map(intToIp).join(" ") : "not set"}`,
+      `  Outgoing access list is ${i.aclOut || "not set"}`, `  Inbound  access list is ${i.aclIn || "not set"}`);
+  }
+  return out.join("\n");
+}
+show("ip interface", s => showIpInterface(s), ["router"]);
+show("ip interface <if>", (s, n) => (s.dev.ifaces[n] ? showIpInterface(s, n) : INVALID), ["router"]);
 show("interfaces", s => showInterfaces(s));
 show("interfaces <if>", (s, n) => showInterfaces(s, n));
 show("interfaces trunk", showTrunk, ["switch"]);
