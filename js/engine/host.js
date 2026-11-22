@@ -271,7 +271,9 @@ const COMMANDS = {
 function login(s, devName, user, mode) {
   const d = s.net.devs[devName];
   const open = () => {
-    s.remote = new IosSession(s.net, devName, { remote: true });
+    // a local account with privilege 15 lands straight at the # prompt
+    const top = mode === "local" && d.users[user] && d.users[user].priv === 15;
+    s.remote = new IosSession(s.net, devName, { remote: true, mode: top ? "priv" : "user" });
     return d.banner ? d.banner + "\n" : "";
   };
   if (mode === "none") return open();

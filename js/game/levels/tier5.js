@@ -49,7 +49,7 @@ export default [
     ],
     hints: [
       "Layer 2 first: `show interfaces trunk` on BR-SW1. Is every VLAN the branch uses allowed on the uplink? Then on PC-S1, `ipconfig`: does the default gateway it received actually exist?",
-      "On BR-R1, `show ip route`: is there a gateway of last resort? A static route whose next hop isn't in a connected subnet never makes it into the table. Compare the next hop with the WAN subnet.",
+      "On BR-R1, `show ip route`: is there a gateway of last resort? A static route only makes it into the table when the router can reach its next hop, and here that has to be the neighbour on the WAN link. Compare the next hop with the WAN subnet.",
       "NAT needs every inside interface marked and every inside subnet in the ACL. Check `show running-config | include nat` and `show access-lists`: is VLAN 20 covered by both?",
     ],
     solution: [
@@ -120,7 +120,7 @@ export default [
     hints: [
       "A workable order: switch first (hostname, VLANs, access ports, trunk), then the router's subinterfaces, then DHCP, then the WAN interface and OSPF, then SSH, then the switch SVI and gateway, then save both.",
       "The switch SVI is `interface vlan 99` with 192.168.199.2/24 plus `ip default-gateway 192.168.199.1`. It only comes up once VLAN 99 exists and is carried on an active port (the trunk).",
-      "OSPF on BR-R1: `router ospf 1`, `router-id 2.2.2.2`, `network 10.255.0.0 0.0.0.3 area 0`, and one network statement per VLAN subnet (wildcard 0.0.0.255). No static default is needed: HQ originates one into OSPF.",
+      "OSPF on BR-R1: `router ospf 1`, `router-id 2.2.2.2`, `network 10.255.0.0 0.0.0.3 area 0`, and one network statement per VLAN subnet (wildcard 0.0.0.255). No static default is needed: HQ originates one into OSPF. The VLAN subinterfaces only face users, so good practice is to make them passive (`passive-interface g0/0.10` and so on), as HQ does on its LAN.",
     ],
     solution: [
       {
@@ -137,7 +137,8 @@ export default [
           "ip dhcp excluded-address 192.168.110.1 192.168.110.10", "ip dhcp excluded-address 192.168.120.1 192.168.120.10",
           "ip dhcp pool STAFF", "network 192.168.110.0 255.255.255.0", "default-router 192.168.110.1", "dns-server 8.8.8.8",
           "ip dhcp pool WAREHOUSE", "network 192.168.120.0 255.255.255.0", "default-router 192.168.120.1", "dns-server 8.8.8.8", "exit",
-          "router ospf 1", "router-id 2.2.2.2", "network 10.255.0.0 0.0.0.3 area 0", "network 192.168.110.0 0.0.0.255 area 0", "network 192.168.120.0 0.0.0.255 area 0", "network 192.168.199.0 0.0.0.255 area 0", "exit",
+          "router ospf 1", "router-id 2.2.2.2", "network 10.255.0.0 0.0.0.3 area 0", "network 192.168.110.0 0.0.0.255 area 0", "network 192.168.120.0 0.0.0.255 area 0", "network 192.168.199.0 0.0.0.255 area 0",
+          "passive-interface g0/0.10", "passive-interface g0/0.20", "passive-interface g0/0.99", "exit",
           "ip domain-name kestrel.lan", "username admin secret Harb0ur!Ops", "crypto key generate rsa modulus 2048", "ip ssh version 2",
           "line vty 0 4", "transport input ssh", "login local", "end", "write memory"],
       },

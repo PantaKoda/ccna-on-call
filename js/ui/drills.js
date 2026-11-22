@@ -4,7 +4,7 @@
 import { h, rich, fmtTime } from "./dom.js";
 import { ipToInt, intToIp, lenMask, netOf, bcastOf } from "../engine/ip.js";
 import { QUESTIONS } from "../game/questions.js";
-import { topicOfQuestion, TOPIC_BY_ID, inExam, questionOnly } from "../game/topics.js";
+import { topicOfQuestion, TOPIC_BY_ID, inExam, questionOnly, v1DomainOf } from "../game/topics.js";
 import { store } from "./store.js";
 
 const rnd = n => Math.floor(Math.random() * n);
@@ -104,7 +104,10 @@ export function loadBank() {
   bankPromise ||= new Promise(resolve => {
     const build = imported => {
       const tag = (list, src) => list.map(q => ({ ...q, src, topic: topicOfQuestion(q) }));
-      const book = imported && Array.isArray(imported.questions) ? tag(imported.questions, "book") : [];
+      // an imported bank may print the same question in two chapters: keep the first copy
+      const seen = new Set();
+      const unique = list => list.filter(q => { const k = String(q.q).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().toLowerCase(); return seen.has(k) ? false : (seen.add(k), true); });
+      const book = imported && Array.isArray(imported.questions) ? tag(unique(imported.questions), "book") : [];
       resolve({ all: [...tag(QUESTIONS, "custom"), ...book], hasBook: book.length > 0 });
     };
     const sc = document.createElement("script");
@@ -162,7 +165,8 @@ export function mountQuiz(root, level, { onDone }) {
   const exam = store.exam();
   // a promotion exam draws by the domains of the exam version being studied
   const want = exam === "v2" ? v2domains : domains;
-  const domainOf = q => (exam === "v2" ? TOPIC_BY_ID.get(q.topic).v2 : q.ch);
+  // v1.1 uses the domain a question was filed under; questions from a mixed practice exam count by their topic
+  const domainOf = q => (exam === "v2" ? TOPIC_BY_ID.get(q.topic).v2 : v1DomainOf(q, q.topic));
   const start = Date.now();
   const progress = h("span", { class: "stat" });
   const card = h("div", { class: "drill-card" }, h("p", { class: "muted" }, "Loading the question bank..."));

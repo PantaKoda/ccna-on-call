@@ -62,7 +62,7 @@ const body = lines.slice(start + 1, end).join("\n").trim();
 if (!/^- /m.test(body)) die("nothing is listed under [Unreleased] in CHANGELOG.md");
 
 console.log(`Releasing ${tag} (was ${pkg.version})`);
-try { run("node", ["tests/run-levels.mjs"]); }
+try { run("node", ["tests/run-levels.mjs"]); run("node", ["tests/run-sim.mjs"]); }
 catch (e) { die("tests failed:\n" + (e.stdout || e.message)); }
 console.log("  tests pass");
 

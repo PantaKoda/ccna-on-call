@@ -314,8 +314,8 @@ const BY_TOPIC = [
     "Source first, destination second: the running configuration (RAM) is copied to the startup configuration (NVRAM)."],
 
   ["static", 3, "You enter <code>ip route 10.5.0.0 255.255.255.0 10.9.9.9</code>, but the route does not show in the routing table. Why?",
-    ["Static routes need a routing protocol", "The next hop 10.9.9.9 is not in any directly connected network", "The mask is invalid", "Static routes are hidden by default"], 1,
-    "A static route is installed only when its next hop can be resolved, normally through a connected network."],
+    ["Static routes need a routing protocol", "The router has no route that leads to the next hop 10.9.9.9", "The mask is invalid", "Static routes are hidden by default"], 1,
+    "A static route is installed only when its next hop can be resolved: normally it sits in a connected network, and otherwise another route (not the default route) must lead to it."],
   ["static", 3, "What does <code>ip route 0.0.0.0 0.0.0.0 203.0.113.1</code> create?",
     ["A host route", "A default route", "A floating route", "A summary of all private networks"], 1,
     "Network 0.0.0.0 with mask 0.0.0.0 matches every destination, so it is used when nothing more specific matches."],
@@ -461,7 +461,7 @@ const BY_TOPIC = [
     "The files are the source of truth: changes are reviewed, recorded and can be rolled back like program code."],
   ["netops", 6, "What does <code>ansible all -m ping</code> check?",
     ["That every host answers ICMP echo", "That Ansible can connect and log in to every host in the inventory", "That every interface is up", "That the playbook has no syntax errors"], 1,
-    "Ansible's ping module is a login test, not an ICMP ping. A host that answers it is ready to be managed."],
+    "Ansible's ping module is a login test, not an ICMP ping. A host that answers it is ready to be managed. (On real network devices, which have no Python, the same test is usually an <code>ios_command</code> task over the <code>network_cli</code> connection.)"],
 
   ["switching", 2, "Which feature blocks a port when a superior BPDU arrives on it, so that a switch plugged in there cannot take over as root?",
     ["PortFast", "Root Guard", "Loop Guard", "UDLD"], 1,
@@ -510,7 +510,7 @@ const BY_TOPIC = [
     "Settings made on the port-channel interface are copied to its members. Changing one member alone makes it differ from the rest and it drops out of the bundle."],
   ["switching", 2, "One end of a bundle uses <code>channel-group 2 mode on</code> and the other <code>mode active</code>. What happens?",
     ["The channel forms with LACP", "The channel forms without a protocol", "No channel forms: <code>on</code> does not speak LACP, so the two ends never agree", "The active end changes itself to <code>on</code>"], 2,
-    "<code>on</code> forces the bundle without negotiating. It only works against another <code>on</code>; against LACP or PAgP the ports are suspended."],
+    "<code>on</code> forces the bundle without negotiating, so it only works against another <code>on</code>. The LACP end hears no partner and keeps its ports out of the bundle (suspended, or stand-alone on older switches), while the <code>on</code> end bundles alone and may be err-disabled by spanning tree as a misconfigured channel."],
 
   ["security", 5, "A port has <code>storm-control broadcast level 5</code> and <code>storm-control action shutdown</code>. What happens when broadcasts exceed 5% of its bandwidth?",
     ["The excess is queued", "The port is err-disabled", "The VLAN is deleted", "Nothing until a reload"], 1,
@@ -562,12 +562,68 @@ const BY_TOPIC = [
   ["fundamentals", 1, "Two old switches without auto-MDIX are connected with a straight-through cable and the link stays down. Which cable is needed?",
     ["A crossover cable", "A rollover cable", "A longer straight-through cable", "A fibre patch lead"], 0,
     "Like devices need the transmit and receive pairs swapped. Modern ports do this automatically, which is why it rarely matters today."],
+  ["fundamentals", 1, "On equipment without auto-MDIX, which cable connects a PC straight to a router's Ethernet port?",
+    ["Straight-through, because they are different kinds of device", "Crossover, because a PC and a router transmit on the same pins", "Rollover", "Either: routers accept both"], 1,
+    "PCs and routers both transmit on pins 1 and 2, so the pairs must be crossed. Straight-through is for a PC or router to a switch."],
+
+  ["l2security", 5, "What does sticky learning do on a port that has port security enabled?",
+    ["It keeps the port up after a violation", "It copies the allowed addresses from a server", "It learns the addresses it sees and writes them into the running configuration", "It shares learned addresses with neighbouring switches"], 2,
+    "Sticky addresses are learned from traffic and stored as configuration lines, so they survive a link flap. They survive a reload only if you save the configuration."],
+  ["l2security", 5, "You type <code>switchport port-security</code> and the switch answers <code>Command rejected: FastEthernet0/3 is a dynamic port</code>. What do you do first?",
+    ["Shut the port down", "Set the port to a static mode with <code>switchport mode access</code>", "Enable PortFast", "Remove the port from VLAN 1"], 1,
+    "Port security is refused on a port that still negotiates its mode. Make it a static access port, then enable the feature."],
+
+  ["routing", 3, "A router has a static route to 10.1.0.0/16 and an OSPF route to 10.1.5.0/24. Which one forwards a packet for 10.1.5.9?",
+    ["The static route, because its administrative distance is lower", "The OSPF route, because it is the longest match", "Both, sharing the load", "Neither: the two routes conflict"], 1,
+    "Administrative distance only chooses between routes to the same prefix. These are two different prefixes, both are in the table, and the more specific one wins for each packet."],
+  ["routing", 3, "PC1 pings a host in another subnet. Which destination MAC address does PC1 put in the frame?",
+    ["The MAC address of the destination host", "The MAC address of its default gateway", "The broadcast address", "The MAC address of the switch it is plugged into"], 1,
+    "A host sends off-subnet traffic to its gateway. The IP addresses stay the same end to end, and the MAC addresses are replaced at every router."],
+
+  ["ospf", 3, "On a running LAN you raise the OSPF priority of a DROTHER to 255. It does not become the designated router. Why?",
+    ["255 is not a valid priority", "The DR election is not pre-emptive: the current DR keeps the role until it leaves", "Priority only matters on point-to-point links", "The router ID always decides first"], 1,
+    "A new election happens only when the DR or BDR disappears. Restarting OSPF on them with <code>clear ip ospf process</code> forces one."],
+  ["ospf", 3, "You type <code>router-id 9.9.9.9</code> on a router that already has FULL neighbours. What happens?",
+    ["The neighbours drop and re-form with the new ID at once", "The command is rejected", "The ID is stored but not used until OSPF restarts, for example with <code>clear ip ospf process</code>", "The ID changes at the next hello"], 2,
+    "The router ID is chosen when the process starts. IOS prints a reminder and keeps the old ID until a reload or a process restart."],
+  ["ospf", 3, "Two routers show each other as FULL, yet neither learns any routes from the other. One interface has <code>ip ospf network point-to-point</code>. What is the cause?",
+    ["A hello timer mismatch", "An area mismatch", "The network types differ, so the two describe the link differently", "Duplicate router IDs"], 2,
+    "Timer, area and router ID problems stop the neighbours forming at all. A broadcast end against a point-to-point end still reaches FULL, but the link cannot be used in the shortest-path calculation."],
+  ["ospf", 3, "Every router has <code>auto-cost reference-bandwidth 10000</code>. What is the OSPF cost of a GigabitEthernet interface?",
+    ["1", "10", "100", "1000"], 1,
+    "Cost is the reference divided by the interface bandwidth: 10000 Mb/s divided by 1000 Mb/s is 10. With the default reference of 100, anything from FastEthernet up costs 1."],
+
+  ["vlans", 2, "One switch port is set to <code>dynamic desirable</code> and the port at the other end is left at <code>dynamic auto</code>. What does the link become?",
+    ["An access link", "A trunk", "It goes err-disabled", "It stays down"], 1,
+    "Desirable starts the DTP negotiation and auto answers it, so they agree on a trunk. Two auto ends never do."],
+  ["intervlan", 2, "On a router subinterface, <code>ip address</code> is refused with a message about IEEE 802.1Q. What is missing?",
+    ["<code>no shutdown</code> on the subinterface", "<code>encapsulation dot1q</code> with the VLAN number, typed before the address", "A trunk on the router", "<code>ip routing</code>"], 1,
+    "IOS will not put an IP address on a LAN subinterface until it knows which VLAN tag the subinterface handles."],
+
+  ["subnetting", 1, "Which summary covers exactly 172.16.8.0/24, 172.16.9.0/24, 172.16.10.0/24 and 172.16.11.0/24?",
+    ["172.16.8.0/21", "172.16.8.0/22", "172.16.0.0/20", "172.16.8.0/23"], 1,
+    "8 and 11 share their first six bits in the third octet, so the prefix is 16 + 6 = 22. A /22 has a block of 4: it covers 8 to 11 and nothing more."],
+  ["subnetting", 1, "You are handing out subnets from 192.168.10.0/24, largest first. After a /25 for 100 hosts, which subnet fits 50 hosts?",
+    ["192.168.10.128/26", "192.168.10.128/27", "192.168.10.100/26", "192.168.10.64/26"], 0,
+    "A /26 has 62 usable addresses, the smallest size that fits 50. The /25 used .0 to .127, so the next free block starts at .128."],
+
+  ["ipv6", 1, "A router advertisement arrives with the A flag on and the O flag on. How does the host configure itself?",
+    ["It asks a DHCPv6 server for its address and everything else", "It builds its own address with SLAAC and asks a DHCPv6 server only for extras such as DNS", "It uses a link-local address only", "It waits for a static address"], 1,
+    "A means \"build your own address from this prefix\" and O means \"other settings are on a DHCPv6 server\": stateless DHCPv6. The M flag would mean stateful DHCPv6."],
+
+  ["access", 5, "A user logs in over SSH with a local account created as <code>username admin privilege 15 secret ...</code>, on lines set to <code>login local</code>. Which prompt appears?",
+    ["<code>Router&gt;</code>, and <code>enable</code> is needed as usual", "<code>Router#</code>, straight away", "<code>Router(config)#</code>", "The login is refused until an enable secret exists"], 1,
+    "Privilege level 15 is privileged EXEC, so the session starts at the <code>#</code> prompt without typing <code>enable</code>."],
 ];
 
 // Built-in questions on subjects that are in the v1.1 blueprint but not in v2.0.
 const V1_ONLY = new Set(["b1-14", "b4-5", "b4-9", "b4-10"]);
 
+// Questions whose wording would sort them into the wrong topic (a wrong answer
+// that mentions a default gateway, for example) are placed by hand.
+const TOPIC_OF = { "b1-5": "fundamentals", "b1-12": "fundamentals", "b2-4": "vlans" };
+
 export const QUESTIONS = [
-  ...[D1, D2, D3, D4, D5, D6].flatMap((set, d) => set.map(([q, o, a, e], i) => { const id = `b${d + 1}-${i + 1}`; return { id, ch: d + 1, q, o, a, e, ...(V1_ONLY.has(id) ? { only: "v1" } : {}) }; })),
+  ...[D1, D2, D3, D4, D5, D6].flatMap((set, d) => set.map(([q, o, a, e], i) => { const id = `b${d + 1}-${i + 1}`; return { id, ch: d + 1, q, o, a, e, ...(TOPIC_OF[id] ? { t: TOPIC_OF[id] } : {}), ...(V1_ONLY.has(id) ? { only: "v1" } : {}) }; })),
   ...BY_TOPIC.map(([t, ch, q, o, a, e, only], i) => ({ id: `t-${i + 1}`, ch, t, q, o, a, e, ...(only ? { only } : {}) })),
 ];

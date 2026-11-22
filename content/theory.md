@@ -9,7 +9,7 @@ Networking is described in layers so that each layer only has to solve one probl
 | OSI layer | Job | Unit of data | Examples |
 | --- | --- | --- | --- |
 | 7 Application, 6 Presentation, 5 Session | What the user's program says | Data | HTTP, DNS, SSH, DHCP |
-| 4 Transport | End-to-end delivery between programs, identified by port numbers | Segment | TCP, UDP |
+| 4 Transport | End-to-end delivery between programs, identified by port numbers | Segment (TCP), datagram (UDP) | TCP, UDP |
 | 3 Network | Logical addressing and choosing a path between networks | Packet | IPv4, IPv6, ICMP, routers |
 | 2 Data link | Delivery on one local segment, identified by MAC addresses | Frame | Ethernet, 802.11, switches |
 | 1 Physical | Bits on a wire, fibre or radio | Bit | Cables, connectors |
@@ -17,7 +17,7 @@ Networking is described in layers so that each layer only has to solve one probl
 ## TCP and UDP
 
 - **TCP** sets up a connection (SYN, SYN-ACK, ACK), numbers every segment, acknowledges what arrives and retransmits what is lost. Used where every byte matters: HTTP/HTTPS (80/443), SSH (22), Telnet (23), FTP (20/21), SMTP (25).
-- **UDP** just sends. No setup, no acknowledgement, no ordering. Used where speed matters or the application handles loss itself: DNS (53), DHCP (67/68), TFTP (69), NTP (123), SNMP (161), syslog (514), voice and video.
+- **UDP** just sends. No setup, no acknowledgement, no ordering. Used where speed matters or the application handles loss itself: DNS (53), DHCP (67/68), TFTP (69), NTP (123), SNMP (161, and 162 for traps), syslog (514), voice and video.
 
 ## How a switch forwards frames
 
@@ -37,7 +37,9 @@ Each switch port is its own **collision domain**. Each VLAN is one **broadcast d
 | Single-mode fibre | Kilometres | Between buildings and sites; needs matching optics |
 
 - Ethernet over copper uses pins **1, 2** and **3, 6** at 10 and 100 Mb/s, and all four pairs at 1 Gb/s.
-- A **straight-through** cable joins unlike devices (PC to switch, switch to router). A **crossover** cable joins like devices (switch to switch, PC to PC). Modern ports detect this themselves (auto-MDIX), so the wrong type only matters on old equipment.
+- What decides the cable is which pins a device **transmits** on. PCs, servers and routers transmit on pins 1 and 2; switches and hubs transmit on 3 and 6.
+- A **straight-through** cable joins one device from each group: PC to switch, router to switch. A **crossover** cable joins two from the same group: switch to switch, PC to PC, router to router, and also **router to PC**, which looks like two different devices but is not.
+- Modern ports detect this themselves (auto-MDIX), so the wrong type only matters on old equipment.
 - Fibre needs both ends to use the same type and wavelength, and the transmit strand of one end to reach the receive strand of the other. `show interfaces transceiver` reports the light levels in dBm; a receive level below the optic's minimum means a dirty connector, a bent or over-long fibre, or mismatched optics.
 
 ## Reading interface errors
@@ -49,10 +51,10 @@ Each switch port is its own **collision domain**. Each VLAN is one **broadcast d
 | CRC, input errors | Damaged frames: bad cable, interference, or a duplex mismatch |
 | Collisions | Normal only on half duplex |
 | **Late collisions** | A **duplex mismatch** (one end full, one end half), or a cable that is too long |
-| Runts and giants | Frames shorter than 64 or longer than 1518 bytes: a faulty network card or a mismatch |
+| Runts and giants | Frames shorter than 64 bytes, or longer than 1518 (1522 with an 802.1Q tag): a faulty network card or a mismatch |
 | Output drops | The link is congested |
 
-Speed and duplex should be auto on both ends, or fixed identically on both. One end fixed and the other auto usually ends as a duplex mismatch: the link comes up, works slowly, and the half-duplex side counts late collisions. A **speed** mismatch is easier to spot, because the link does not come up at all.
+Speed and duplex should be auto on both ends, or fixed identically on both. At 10 and 100 Mb/s, one end fixed and the other auto usually ends as a duplex mismatch: the auto end can sense the speed but not the duplex, so it falls back to half. The link comes up and works slowly. Each side shows it differently: the **half-duplex** side counts late collisions, and the **full-duplex** side counts CRC errors and runts. Gigabit over copper always negotiates, so it does not fail this way. A **speed** mismatch is easier to spot, because the link does not come up at all.
 
 ## Network designs {v1}
 
@@ -164,7 +166,7 @@ Every value we calculate is the address with its host bits set in a special way.
 | **First usable host** | kept | all 0 except the last bit = 1 | The lowest address a device can have. By convention it's often the **router interface** (the default gateway). |
 | **Last usable host** | kept | all 1 except the last bit = 0 | The highest address a device can have. Some networks put the gateway here instead. First to last is the range for a DHCP pool. |
 
-Network and broadcast are reserved, so "usable hosts" is always the total minus 2.
+Network and broadcast are reserved, so "usable hosts" is the total minus 2. There are two exceptions at the very end of the scale: a **/31** on a point-to-point link uses both of its addresses (there is nobody else to broadcast to), and a **/32** is one single address, used for loopbacks and host routes.
 
 ### Tool you need: binary place values
 
@@ -373,6 +375,37 @@ The interesting octet is the 4th; its value is 200.
 
 When the interesting octet is the last one, there are no later octets to fill with 0 or 255. The answer comes directly from that octet.
 
+## Subnets of different sizes (VLSM)
+
+One block rarely has to be cut into equal parts. Give each segment the smallest subnet that fits it, and hand them out **largest first**, so the blocks never overlap.
+
+Example: 192.168.10.0/24 has to serve a LAN of 100 hosts, one of 50, one of 20 and a link between two routers.
+
+| Need | Smallest subnet that fits | Subnet | Addresses |
+| --- | --- | --- | --- |
+| 100 hosts | /25 (126 usable) | 192.168.10.0/25 | .0 to .127 |
+| 50 hosts | /26 (62 usable) | 192.168.10.128/26 | .128 to .191 |
+| 20 hosts | /27 (30 usable) | 192.168.10.192/27 | .192 to .223 |
+| 2 routers | /30 (2 usable) | 192.168.10.224/30 | .224 to .227 |
+
+Each subnet starts where the one before it ended. Because the sizes go from large to small, every start lands on a multiple of its own block size, which is what makes it a valid subnet. Addresses .228 to .255 stay free for later.
+
+## Summarising routes
+
+Neighbouring subnets can be advertised as one shorter prefix when they share their leading bits. Write the octet that differs, for the first and the last subnet, in binary and count the bits they have in common.
+
+Example: 172.16.8.0/24, 172.16.9.0/24, 172.16.10.0/24 and 172.16.11.0/24.
+
+```
+ 8 = 000010|00
+11 = 000010|11
+     shared: 6 bits
+```
+
+Two full octets plus 6 bits is 22, so the summary is **172.16.8.0/22**. Check it with the block size: a /22 has a block of 4 in the third octet, so it covers 8, 9, 10 and 11 and nothing else.
+
+A summary always covers a power-of-two number of equal subnets and starts on a multiple of its block size. 172.16.9.0 to 172.16.12.0 cannot be summarised cleanly: the smallest prefix that holds all four is 172.16.8.0/21, which also claims 8, 13, 14 and 15.
+
 > Common mistakes: giving a host the network or broadcast address; forgetting to subtract 2; working in the wrong octet for prefixes shorter than /24.
 
 <!-- topic: addressing -->
@@ -468,6 +501,18 @@ Result: `0212:34FF:FE56:789A`. With the prefix `2001:db8:1:1::/64` the address i
 - **DHCPv6**: a server hands out the address (stateful) or only extras such as DNS (stateless).
 
 Neighbour Discovery (NDP) replaces ARP. Neighbour solicitation and advertisement find MAC addresses; router solicitation and advertisement find the gateway and prefix.
+
+The **router advertisement** tells hosts which method to use, with three flags:
+
+| Flags in the RA | Method | Address from | DNS and other options from |
+| --- | --- | --- | --- |
+| A on, O off, M off | SLAAC | The host builds it | Nowhere (or the RA itself) |
+| A on, O on | Stateless DHCPv6 | The host builds it | A DHCPv6 server |
+| M on | Stateful DHCPv6 | A DHCPv6 server | A DHCPv6 server |
+
+- DHCPv6 never hands out a default gateway. In all three cases the host takes the **router's link-local address** from the RA as its gateway.
+- Before using any address, a host checks that nobody else has it: **duplicate address detection** (DAD) sends a neighbour solicitation for its own address and expects silence.
+- Neighbour solicitations go to a **solicited-node multicast** address, `FF02::1:FF` followed by the last 24 bits of the target address, so only the few hosts sharing those bits are disturbed, not the whole segment as with an ARP broadcast.
 
 ## Configuring a router
 
@@ -610,7 +655,9 @@ Signal strength is measured as **RSSI** in dBm, a negative number: -50 is strong
 | WEP | RC4 | Broken; never use |
 | WPA | TKIP | Deprecated |
 | WPA2 | AES-CCMP | Still common |
-| WPA3 | AES-GCMP, with **SAE** in place of the pre-shared key handshake | Current |
+| WPA3 | AES-CCMP as the minimum, AES-GCMP-256 in the 192-bit enterprise mode. **SAE** replaces the pre-shared key handshake, and protected management frames are mandatory | Current |
+
+Many study guides shorten the last row to "WPA3 uses GCMP". If a question offers only one cipher per generation, that is the pairing it expects: TKIP for WPA, CCMP for WPA2, GCMP for WPA3.
 
 **Personal** mode uses one shared passphrase. **Enterprise** mode uses 802.1X with a RADIUS server, so each user logs in with their own credentials.
 
@@ -638,9 +685,16 @@ Redundant links between switches create loops, and Ethernet frames have no hop l
 1. The switch with the lowest **bridge ID** (priority, then MAC address) becomes the **root bridge**. The default priority is 32768, so by default the oldest switch wins.
 2. Every other switch picks one **root port**: its lowest-cost path to the root.
 3. Each link gets one **designated port**, the end closer to the root. All ports on the root bridge are designated.
-4. Any port left over is an **alternate** port (a backup path to the root) and is blocked.
+4. Any port left over is blocked. It is an **alternate** port if it is a second path to the root through another switch, or a **backup** port if it is a second connection to a segment this switch already serves (two ports into the same hub). Backup ports are rare today.
 
 Path cost by speed: 10 Mb/s is 100, 100 Mb/s is 19, 1 Gb/s is 4, 10 Gb/s is 2.
+
+When two paths cost the same, the switch breaks the tie in this order, taking the lowest value each time:
+
+1. Root path cost.
+2. The bridge ID of the neighbour that sent the BPDU.
+3. The neighbour's port priority and number.
+4. Its own port number.
 
 | Rapid PVST+ state | Forwards frames | Learns MAC addresses |
 | --- | --- | --- |
@@ -648,7 +702,9 @@ Path cost by speed: 10 Mb/s is 100, 100 Mb/s is 19, 1 Gb/s is 4, 10 Gb/s is 2.
 | Learning | No | Yes |
 | Forwarding | Yes | Yes |
 
-Older 802.1D spanning tree used blocking, listening, learning and forwarding and took 30 to 50 seconds to converge. Rapid spanning tree takes a second or two.
+Cisco's show commands still print `BLK` for a discarding port.
+
+Older 802.1D spanning tree used blocking, listening, learning and forwarding, waited on timers and took 30 to 50 seconds to converge. Rapid spanning tree takes a second or two, because two switches on a point-to-point link agree on the port roles directly instead of waiting.
 
 ## Choosing the root on purpose
 
@@ -668,6 +724,8 @@ What the two shortcuts really do:
 | `root primary` | 24576, or 4096 below the current root if that one is already lower |
 | `root secondary` | 28672 |
 | `no spanning-tree vlan 10 priority` | back to the default, 32768 |
+
+Both shortcuts are worked out **once**, when you type them, and stored as an ordinary `priority` line in the running configuration. They do not keep watching: if a switch with a lower priority joins later, it takes the root.
 
 `root primary` cannot go below a root that already sits at priority 0; it reports a failure and you have to raise the other switch instead. Because every VLAN has its own tree, two distribution switches can share the work: one is root for half the VLANs and backup for the rest, and the other the reverse. Each VLAN then blocks a different uplink, so no cable sits idle.
 
@@ -692,7 +750,7 @@ Gi0/2               Altn BLK 4         128.10   P2p
 
 - **Root ID** is the root bridge of this VLAN. If it says "This bridge is the root", you are on it. Otherwise `Cost` and `Port` give this switch's path to it.
 - **Bridge ID** is the switch you are on. The priority shown is the configured priority plus the VLAN number (the *system ID extension*): 32768 + 10 = 32778.
-- Each port has a **role** (Root, Desg, Altn) and a **state** (FWD, BLK). `Edge` marks a PortFast port.
+- Each port has a **role** (Root, Desg, Altn, and rarely Back) and a **state** (FWD, or BLK for discarding). `Edge` marks a PortFast port.
 - `show spanning-tree summary` shows the mode and how many ports block in each VLAN.
 
 Two parallel cables between the same two switches are a loop like any other: one of them is blocked. That is the problem EtherChannel solves.
@@ -731,7 +789,14 @@ If root guard is already on the distribution switches, they never accept the fal
 
 ## BPDU Filter {v1}
 
-BPDU Filter stops a port sending or processing BPDUs. It hides spanning tree from the attached device and can create a loop if used carelessly, so BPDU Guard is the safer choice on access ports.
+BPDU Filter stops a port sending BPDUs. It hides spanning tree from the attached device, and it behaves differently depending on where you turn it on:
+
+| Where | Command | What happens when a BPDU arrives |
+| --- | --- | --- |
+| On one interface | `spanning-tree bpdufilter enable` | It is ignored. The port takes no part in spanning tree at all, so a second switch plugged in here can create a loop |
+| Globally, for PortFast ports | `spanning-tree portfast bpdufilter default` | The port drops PortFast and the filter and goes back to normal spanning tree |
+
+The interface form is the dangerous one. BPDU Guard is the safer choice on access ports.
 
 ## EtherChannel
 
@@ -763,6 +828,8 @@ The flag beside each member port tells you what went wrong:
 | `I` | Stand-alone: the port works on its own, outside the bundle | The other end did not negotiate: passive at both ends, or the far port is not in a group |
 | `s` | Suspended: the port carries nothing | The two ends cannot agree: `on` against LACP, or LACP against PAgP |
 | `D` | Down | Cable unplugged or a port shut down |
+
+Which of `I` and `s` you see for a failed negotiation depends on the switch. Current switches suspend an LACP port that hears no partner; older ones leave it stand-alone. With `on` against LACP, the `on` end does not wait for anyone: it bundles by itself, and spanning tree may then err-disable it as a misconfigured channel. In this game both ends show `s`.
 
 A port left stand-alone is an ordinary parallel link again, so spanning tree blocks it. All members of one group on a switch must use the same protocol; to change the mode of an existing group, select every member with `interface range` and change them together.
 
@@ -819,7 +886,17 @@ interface g0/1
 
 - Both ends must be trunks, and both ends must agree on the native VLAN.
 - `switchport trunk allowed vlan 10,20` **replaces** the list. To add one more later, use `switchport trunk allowed vlan add 30`; leaving out `add` wipes the others.
-- Ports left in `dynamic auto` never form a trunk with each other, because neither side starts the negotiation.
+- A port you have not set to access or trunk is **dynamic** and negotiates with its neighbour (DTP). `dynamic desirable` asks for a trunk; `dynamic auto`, the default on most switches, only answers.
+
+| This end | Other end: trunk | dynamic desirable | dynamic auto | access |
+| --- | --- | --- | --- | --- |
+| **trunk** | Trunk | Trunk | Trunk | Mismatch: avoid |
+| **dynamic desirable** | Trunk | Trunk | Trunk | Access |
+| **dynamic auto** | Trunk | Trunk | Access | Access |
+| **access** | Mismatch: avoid | Access | Access | Access |
+
+- Two ports left in `dynamic auto` never form a trunk, because neither side starts the negotiation.
+- `switchport nonegotiate` on a static trunk stops it sending DTP, so a dynamic neighbour no longer follows it. Set both ends by hand in production: a port that trunks with whatever is plugged in is a security risk.
 
 ## Check your work
 
@@ -878,11 +955,18 @@ A multilayer switch can route between VLANs itself with one SVI per VLAN (`inter
 <!-- topic: routing -->
 ## How a router chooses a route
 
-A router keeps a routing table of destination prefixes. For each packet it does three things in this order.
+A router does two separate jobs, and three rules are split between them.
 
-1. **Longest prefix match.** Of all the routes that match the destination, the most specific wins. A /24 beats a /16, which beats the default route 0.0.0.0/0. This comparison ignores where the route came from.
-2. **Administrative distance** decides between routes to the *same* prefix learned from *different* sources. Lower is more trusted.
-3. **Metric** decides between routes to the same prefix from the *same* protocol. Lower is better.
+**Building the table** (once, when routes are learned):
+
+- **Metric** decides between routes to the same prefix from the *same* protocol. Lower is better, and only the winner is offered to the table.
+- **Administrative distance** decides between routes to the *same* prefix offered by *different* sources. Lower is more trusted, and only that one is installed.
+
+**Forwarding a packet** (every packet):
+
+- **Longest prefix match.** Of all the installed routes that match the destination, the most specific wins. A /24 beats a /16, which beats the default route 0.0.0.0/0. Where the route came from no longer matters: a /24 learned from RIP beats a /16 static route.
+
+So administrative distance and metric never compare a /24 with a /16. Those are different prefixes, and both go into the table.
 
 | Source | Administrative distance |
 | --- | --- |
@@ -903,6 +987,23 @@ In `show ip route`, `C` is connected, `L` is the router's own address, `S` is st
 
 Each router decides independently, and a reply needs a route back. A ping that reaches its target but never returns usually means the far side has no route to the source.
 
+## Following one packet end to end
+
+PC1 (10.1.0.10) sends to PC2 (10.2.0.10) through SW1, R1, R2 and SW2. Two kinds of address travel with it, and they behave differently.
+
+| Hop | Source and destination IP | Source MAC | Destination MAC |
+| --- | --- | --- | --- |
+| PC1 to R1 (through SW1) | 10.1.0.10 to 10.2.0.10 | PC1 | R1's LAN interface |
+| R1 to R2 | 10.1.0.10 to 10.2.0.10 | R1's WAN interface | R2's WAN interface |
+| R2 to PC2 (through SW2) | 10.1.0.10 to 10.2.0.10 | R2's LAN interface | PC2 |
+
+1. PC1 compares the destination with its own subnet. It is somewhere else, so PC1 sends the frame to its **default gateway**, using ARP to learn the gateway's MAC address. PC1 never asks for PC2's MAC address.
+2. SW1 forwards the frame by its destination MAC address and changes nothing.
+3. R1 removes the frame, looks up the destination IP in its routing table, lowers the TTL by one and builds a **new frame** for the next hop, using ARP if it does not know that neighbour's MAC address yet.
+4. R2 does the same, and finds the destination in a connected subnet, so the last frame goes to PC2 itself.
+
+The **IP addresses stay the same** from end to end (unless NAT is in the path). The **MAC addresses are replaced at every router** and are never changed by a switch. Most troubleshooting follows from this: `show mac address-table` and ARP answer "where on this segment?", and the routing table answers "which segment next?".
+
 ## First-hop redundancy
 
 Hosts have one default gateway. If that router fails, they are cut off. A first-hop redundancy protocol lets two or more routers share a **virtual IP and MAC address**. Hosts point at the virtual address and never notice a failover.
@@ -914,6 +1015,10 @@ Hosts have one default gateway. If that router fails, they are cut off. A first-
 | Default priority | 100, highest wins | 100, highest wins |
 | Preemption (a better router takes over when it returns) | Off by default | On by default |
 | Virtual IP | A separate address | Can be a router's own interface address |
+| Virtual MAC | `0000.0c07.acXX` (version 1), `0000.0c9f.fXXX` (version 2) | `0000.5e00.01XX` |
+| Hellos sent to | 224.0.0.2 (version 1), 224.0.0.102 (version 2) | 224.0.0.18 |
+
+`XX` is the group number in hexadecimal: HSRP group 10 answers ARP with `0000.0c07.ac0a`. Both routers of a group must run the same HSRP version, or each believes it is alone and both go active.
 
 ## Reading their status
 
@@ -937,7 +1042,7 @@ A static route tells the router by hand how to reach a network it is not connect
 ip route 10.2.0.0 255.255.255.0 10.0.12.2
 ```
 
-That reads: to reach 10.2.0.0/24, send to the neighbour at 10.0.12.2. The **next hop** must be an address in a subnet this router is directly connected to. If it is not, the route never appears in the routing table.
+That reads: to reach 10.2.0.0/24, send to the neighbour at 10.0.12.2. The router must be able to **resolve** the next hop, or the route never appears in the routing table. Normally the next hop is a neighbour in a subnet the router is directly connected to. It may also be an address further away that another route already leads to (a *recursive* lookup: the router looks up the next hop, then forwards to whatever that route says). The default route does not count for this.
 
 ## Default routes
 
@@ -982,7 +1087,7 @@ A router in the middle of a chain needs routes in both directions. Routers at th
 - `show ip route` on each router: is the route there?
 - `ping` from a host, then `tracert` to see how far packets get. The last router that answers is where to look next.
 
-> Common mistakes: a next hop that is not a directly connected neighbour; routes in one direction only; the wrong mask on the destination.
+> Common mistakes: a next hop the router has no way to reach; routes in one direction only; the wrong mask on the destination.
 
 <!-- topic: ospf -->
 ## What OSPF is
@@ -990,7 +1095,7 @@ A router in the middle of a chain needs routes in both directions. Routers at th
 OSPF is a **link-state** routing protocol. Each router describes its own links, floods that description to the others in its area, and every router runs the same shortest-path calculation on the same map. It reacts to failures in seconds and has no hop limit.
 
 - Routers are grouped in **areas**. Area 0 is the backbone; a single-area design puts everything in area 0.
-- The metric is **cost**: reference bandwidth (100 Mb/s by default) divided by interface bandwidth, minimum 1. FastEthernet and anything faster both cost 1 unless you raise the reference with `auto-cost reference-bandwidth`.
+- The metric is **cost**: reference bandwidth (100 Mb/s by default) divided by interface bandwidth, rounded down, minimum 1. FastEthernet and anything faster both cost 1 unless you raise the reference with `auto-cost reference-bandwidth` (in Mb/s, and the same on every router). With a reference of 10000, gigabit costs 10 and FastEthernet 100. `bandwidth` on an interface changes the figure OSPF divides by, and `ip ospf cost` sets the cost directly and overrides both.
 - Administrative distance is **110**.
 
 ## Configuring it
@@ -1006,6 +1111,7 @@ router ospf 1
 - The process number (`1`) is local to the router; neighbours do not need the same one.
 - `network` uses a **wildcard mask**. It selects which interfaces run OSPF and puts them in an area.
 - **Router ID**: the configured `router-id`, else the highest loopback address, else the highest active interface address. It must be unique.
+- The router ID is picked when the process **starts** and then kept. Typing `router-id` on a router that already has neighbours prints "Reload or use clear ip ospf process command, for this to take effect", and nothing changes until you run `clear ip ospf process` in privileged mode. Set the router ID first, before the `network` lines, and you never meet this.
 - A **passive interface** is still advertised but sends no hellos, so no neighbour can form there. Use it on LANs with only end hosts.
 - `default-information originate` advertises this router's default route to the others.
 
@@ -1015,16 +1121,34 @@ Two routers on a link become neighbours only if all of these match:
 
 1. Same subnet and mask.
 2. Same **area**.
-3. Same **hello and dead timers** (10 and 40 seconds by default on Ethernet).
+3. Same **hello and dead timers** (10 and 40 seconds by default on Ethernet). Changing the hello interval moves the dead interval to four times the new value, unless you set `ip ospf dead-interval` yourself.
 4. **Different** router IDs.
 5. Neither interface is passive.
 6. Matching authentication, if used.
 
-The goal state is **FULL**.
+One more setting matters after they have found each other: the interface **MTU**. If it differs, the neighbours appear but stay stuck in EXSTART or EXCHANGE and never reach FULL.
+
+## Neighbour states
+
+Hellos go to the multicast address **224.0.0.5** (all OSPF routers). On a broadcast link, updates meant for the DR and BDR go to **224.0.0.6**.
+
+| State | What has happened |
+| --- | --- |
+| Down | No hello heard |
+| Init | A hello arrived, but it does not list this router yet |
+| 2-Way | Each router has seen itself in the other's hello. The DR election happens here |
+| ExStart | The two decide who leads the database exchange |
+| Exchange | They swap summaries of their databases |
+| Loading | Each asks for the entries it is missing |
+| **Full** | The databases match |
+
+The goal state is **FULL**. On a link with a designated router, two routers that are neither DR nor BDR stop at **2-WAY** with each other, shown as `2WAY/DROTHER`. That is normal: they exchange routes through the DR.
 
 ## Broadcast and point-to-point links
 
 OSPF treats an Ethernet link as a **broadcast** network, where many routers could be present. To avoid every router pairing with every other, they elect a **designated router** (DR) and a backup (BDR): the highest interface priority wins, then the highest router ID. Priority 0 means "never". The others show as DROTHER and only become FULL with the DR and BDR.
+
+The election is **not pre-emptive**. Once a DR exists it keeps the role until it leaves the link, even if a router with a higher priority joins or you raise a priority afterwards. If the DR fails, the BDR is promoted and a new BDR is elected. To make a particular router the DR on a running network, set the priorities and then restart OSPF on the current DR and BDR with `clear ip ospf process`. `show ip ospf interface g0/0` names the DR and BDR and lists the timers.
 
 On a link with exactly two routers the election is wasted effort. Setting both ends to point-to-point skips it:
 
@@ -1033,7 +1157,7 @@ interface g0/1
  ip ospf network point-to-point
 ```
 
-Both ends must use the same network type. In `show ip ospf neighbor` a point-to-point neighbour shows `FULL/ -` instead of `FULL/DR`.
+Both ends must use the same network type. In `show ip ospf neighbor` a point-to-point neighbour shows `FULL/ -` instead of `FULL/DR`. A mismatch is a trap worth knowing: with one end broadcast and the other point-to-point the neighbours still reach FULL, because the timers match, but the two describe the link differently and **no routes** are learned across it.
 
 ## OSPFv3 for IPv6 {v2}
 
@@ -1181,7 +1305,7 @@ Hosts are reached by name, and DNS turns the name into an address. Each kind of 
 | **NS** | A domain to its authoritative name servers | Who answers for `example.com` |
 | **PTR** | An address back to a name (reverse lookup) | Used by mail servers and logs |
 
-DNS uses UDP port 53, and TCP 53 for large answers.
+DNS uses UDP port 53, and TCP 53 for answers too large for UDP and for zone transfers between servers.
 
 ## Diagnosing a name problem
 
@@ -1215,7 +1339,7 @@ copy running-config scp://admin@10.0.99.50/hq-r1.cfg
 copy scp://admin@10.0.99.50/image.bin flash:
 ```
 
-SCP needs SSH working first and an account with privilege 15. After copying an image, `verify /md5 flash:image.bin` confirms it arrived intact.
+SCP needs SSH working first and an account with privilege 15. For the device to act as the SCP **server**, IOS also has to be able to check that privilege level, which means AAA: `aaa new-model`, `aaa authentication login default local` and `aaa authorization exec default local`. After copying an image, `verify /md5 flash:image.bin` confirms it arrived intact.
 
 ## FTP and TFTP {v1}
 
@@ -1298,6 +1422,14 @@ Syslog is the device telling you things. SNMP is a management station asking, on
 | SNMPv1, v2c | A community string sent in clear text |
 | SNMPv3 | Usernames, authentication and encryption |
 
+SNMPv3 has three security levels, and the name says what each adds:
+
+| Level | Authentication | Encryption |
+| --- | --- | --- |
+| `noAuthNoPriv` | Username only | No |
+| `authNoPriv` | A hash proves who sent it | No |
+| `authPriv` | A hash proves who sent it | Yes |
+
 SNMP is what draws interface graphs and raises "CPU high" alarms.
 
 > Common mistakes: reading severity the wrong way round (0 is worst); expecting log messages in an SSH session without `terminal monitor`; using SNMPv2c across an untrusted network.
@@ -1364,6 +1496,8 @@ interface g0/1
 
 - **DHCP snooping** sorts ports into trusted and untrusted. Server messages (offers and acknowledgements) are accepted only on **trusted** ports, the uplinks toward the real server. Every port is untrusted until you say otherwise. The switch also records which address was leased to which port in a **binding table**.
 - **Dynamic ARP inspection** checks ARP messages on untrusted ports against that binding table and drops the ones that do not match. It depends on DHCP snooping being enabled first.
+- A host with a **static address** has no entry in the binding table, so ARP inspection drops its ARP messages. Either trust its port or list it in an ARP access list (`arp access-list`, applied with `ip arp inspection filter`).
+- A snooping switch adds **option 82** to client requests by default. A Cisco router acting as the DHCP server discards requests that carry it without a relay address, so clients get no lease. On a small network the usual fix is `no ip dhcp snooping information option` on the switch.
 
 ## Storm control {v2}
 
@@ -1415,7 +1549,7 @@ interface fa0/1
  switchport port-security mac-address sticky
 ```
 
-- The port must be a **static access port** first; port security is refused on a dynamic port.
+- The port must be **static** first: port security is refused on a dynamic port. In practice that means `switchport mode access`. IOS also accepts it on a static trunk, which is rarely used.
 - `switchport port-security` on its own turns the feature on. The other lines only set options; without the first line nothing is enforced.
 - **Sticky** learning takes the first address seen and writes it into the running configuration, so you do not type MAC addresses by hand.
 
@@ -1478,6 +1612,12 @@ The line format is: action, protocol, source, destination, then an optional port
 
 To limit who may open SSH or Telnet sessions to the device itself, apply a standard ACL to the lines instead: `access-class 10 in` under `line vty 0 4`.
 
+## Details that catch people out
+
+- **Editing.** Lines in a named ACL carry sequence numbers (10, 20, 30). Inside `ip access-list extended GUEST-IN`, `15 permit tcp any host 10.0.0.10 eq 443` inserts a line between 10 and 20, and `no 20` removes one. You do not have to delete the list and retype it.
+- **The router's own traffic.** An outbound ACL filters packets the router forwards, not packets the router creates itself. A ping typed on the router is not stopped by that router's outbound ACL, so test from a host.
+- **Return traffic.** An ACL checks each packet by itself and does not remember connections. If you filter inbound from the Internet, replies to sessions your users started must be permitted too. For TCP, `permit tcp any any established` matches only packets that belong to a conversation already open (ACK or RST set).
+
 ## Check your work
 
 `show access-lists` shows each line with a **match counter**. Send test traffic and watch which line counts up; that tells you which rule the packet really hit.
@@ -1525,7 +1665,8 @@ line vty 0 4
 ## Console and privileged mode
 
 - `line console 0` with `password` and `login` protects the console port.
-- `enable secret` protects privileged mode. A remote user cannot enter privileged mode at all on a device that has no enable secret.
+- `enable secret` protects privileged mode. A remote user who types `enable` on a device with no enable secret (or the older, weaker `enable password`) is refused with "% No password set".
+- A local account created with `privilege 15` skips that step: with `login local` it lands straight at the `#` prompt.
 - `exec-timeout 5 0` logs out an idle session after five minutes.
 
 ## Check your work
@@ -1681,6 +1822,12 @@ Read it top down: one **play** that runs on every host in the `access` group, wi
 | `ansible access -m ios_command -a "show vlan brief"` | Runs one show command on a group |
 | `ansible-playbook -i inventory.ini cctv.yml` | Runs a playbook |
 | `ansible-playbook cctv.yml --check` | Reports what would change, without changing it |
+
+The game keeps the names short. On a real control node, three things look different:
+
+- Ansible's built-in `ping` module was written for servers and expects Python on the target, which a switch does not have. For network devices the inventory sets `ansible_connection=ansible.netcommon.network_cli` and `ansible_network_os=cisco.ios.ios`, and the modules run on the control node and talk to the device over SSH.
+- Modules are usually written with their full names: `cisco.ios.ios_config`, `cisco.ios.ios_command`.
+- A quick "can I log in?" test is an `ios_command` task that runs `show version`.
 
 ## Reading the result
 

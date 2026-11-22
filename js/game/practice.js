@@ -702,7 +702,8 @@ const SKILLS = [
       const base = (f1, f2, trunk) => [`vlan ${v1}`, `name ${n1}`, `vlan ${v2}`, `name ${n2}`, "interface fa0/1", "switchport mode access", `switchport access vlan ${f1}`,
         "interface fa0/2", "switchport mode access", `switchport access vlan ${f2}`, "interface g0/1", ...trunk];
       const good = ["switchport mode trunk", `switchport trunk allowed vlan ${v1},${v2}`];
-      const sw1 = base(v1, v2, fault === "no-trunk" ? [`switchport trunk allowed vlan ${v1},${v2}`] : good);
+      // an uplink merely left at its default would still negotiate a trunk with the far end (DTP), so this fault forces it to access
+      const sw1 = base(v1, v2, fault === "no-trunk" ? ["switchport mode access", `switchport trunk allowed vlan ${v1},${v2}`] : good);
       const sw2 = [...base(v1, fault === "wrong-vlan" ? v1 : v2, fault === "allowed" ? ["switchport mode trunk", `switchport trunk allowed vlan ${v1}`] : good),
         ...(fault === "no-vlan" ? ["exit", `no vlan ${v2}`] : []), ...(fault === "port-shut" ? ["interface fa0/1", "shutdown"] : [])];
       const fix = {

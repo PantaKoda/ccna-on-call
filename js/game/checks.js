@@ -117,7 +117,7 @@ export const C = {
   },
   noOspf: devs => net => devs.every(d => !Object.keys(net.devs[d].ospf).length),
   ospfNeighbors: (dev, count) => net => (net.st.nbrs[dev] || []).length >= count,
-  ospfNeighbor: (dev, other) => net => (net.st.nbrs[dev] || []).some(n => n.dev === other),
+  ospfNeighbor: (dev, other) => net => (net.st.nbrs[dev] || []).some(n => n.dev === other && n.state === "FULL"),
   routerId: (dev, rid) => net => net.st.rids[dev] === I(rid),
   ospfPassive: (dev, n) => net => { const o = (net.st.oifs[dev] || []).find(x => x.name === normIf(n)); return !!o && o.passive; },
 

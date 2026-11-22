@@ -12,7 +12,7 @@ It is a static web app (plain HTML, CSS and ES modules, no build step, no backen
 - **Two ways to browse.** *Career path*: 5 tiers, each harder than the last, with 23 hands-on labs (24 in v2.0), 2 subnetting drills and 5 promotion exams. *Topics*: the same content grouped into 26 topics under the exam's domains, each with a theory page, a quick check and its labs.
 - **Theory first.** Every topic has a study page with the key ideas, the commands and the common mistakes. The same page opens in a side drawer during a lab.
 - **Random variants on demand.** After you solve a lab, a **New variant** button appears on it. Each press builds a new version of the same skill from a random seed: different addresses, VLAN numbers and names, and for troubleshooting a different fault. 22 of the 24 labs have variants (27 templates; some labs have a build version and a troubleshooting version). There is no schedule: you decide when and how often. Each solved variant earns the lab's XP again under the same star rules.
-- **A network simulator** that runs in the browser: VLANs and trunks, per-VLAN spanning tree (root election, port roles, root guard, BPDU guard), EtherChannel (LACP, PAgP and static), router-on-a-stick, static and default routes, OSPF (adjacencies, costs, DR/BDR, passive interfaces, default origination), DHCP server and relay, NAT (PAT and static), standard and extended ACLs, SSH/Telnet access rules, port security.
+- **A network simulator** that runs in the browser: VLANs and trunks, per-VLAN spanning tree (root election, port roles, root guard, BPDU guard), EtherChannel (LACP, PAgP and static), router-on-a-stick, static and default routes, OSPF (adjacencies, cost from bandwidth, a DR/BDR election that is not pre-emptive, point-to-point links, timers, passive interfaces, default origination), trunk negotiation (DTP), DHCP server and relay, NAT (PAT and static), standard and extended ACLs, SSH/Telnet access rules, port security.
 - **An IOS-style command line**: user/privileged/config modes, command abbreviation (`sh ip int br`), `?` help, Tab completion, `do`, `no` forms, `| include / exclude / begin / section`, console log messages (`%LINK-3-UPDOWN`, `%OSPF-5-ADJCHG`), and over thirty `show` commands.
 - **A PC command prompt**: `ipconfig`, `ping`, `tracert`, `ssh`, `telnet`, `curl`, plus an IP settings bar for static/DHCP addressing.
 - **A simulated Ansible control node** (v2.0): an inventory and a playbook you edit in the browser, `ansible` and `ansible-playbook` (with `--check`), and the `ios_config`, `ios_command` and `ping` modules, run against the simulated switches over simulated SSH. No containers or real Ansible involved.
@@ -43,8 +43,9 @@ To try any level without playing the ones before it, add `?unlock=all` to the UR
 ## Tests
 
 ```bash
-npm test                      # plays every lab's scripted solution in the simulator
+npm test                      # plays every lab's scripted solution, then the simulator behaviour tests
 node tests/run-levels.mjs ospf-broken -v    # one level, with the full console transcript
+node tests/run-sim.mjs        # only the simulator behaviour tests (OSPF, DTP, static routes, login)
 ```
 
 Each lab ships with a solution script. The test builds the lab, checks the objectives are not already met, types the solution into the simulated consoles and checks every objective is met at the end. It runs every variant template over 40 random seeds the same way, and checks that the question bank is well formed, that every topic has a theory page, and that every ticket and skill belongs to a topic. The Docker build runs the same test and fails if a level can no longer be completed.
@@ -102,6 +103,7 @@ tools/serve.mjs               dev server
 tools/release.mjs             cuts a release (version, changelog, tag, push)
 tools/import-data.mjs         builds data packs from the companion practice app
 tests/run-levels.mjs          level, variant template, topic and question bank tests
+tests/run-sim.mjs             simulator behaviour tests on small purpose-built networks
 Dockerfile, nginx.conf        production image
 CHANGELOG.md                  what changed in each version
 ```
@@ -179,4 +181,4 @@ The script expects the changes to be committed and described under `## [Unreleas
 
 ## Known limits of the simulator
 
-It models what the CCNA labs need, not all of IOS. Several v2.0 topics are theory and questions only for that reason: IPv6 and OSPFv3, wireless, virtualization, VPNs, HSRP and VRRP, AAA servers, DHCP snooping, storm control and RA guard. Not simulated yet: IPv6, HSRP, wireless, and `debug`. Spanning tree is computed, not timed: the tree is worked out again after every command, so there are no listening or learning delays and no convergence to wait for, loop guard is accepted without effect, and BPDU filter is not modelled. EtherChannel is layer 2 only, and a member port takes its VLAN settings from the port-channel interface rather than being suspended when its own settings differ. Unknown commands are rejected the way IOS rejects them rather than silently accepted.
+It models what the CCNA labs need, not all of IOS. Several v2.0 topics are theory and questions only for that reason: IPv6 and OSPFv3, wireless, virtualization, VPNs, HSRP and VRRP, AAA servers, DHCP snooping, storm control and RA guard. Not simulated yet: IPv6, HSRP, wireless, and `debug`. Spanning tree is computed, not timed: the tree is worked out again after every command, so there are no listening or learning delays and no convergence to wait for, loop guard is accepted without effect, and BPDU filter is not modelled. EtherChannel is layer 2 only, and a member port takes its VLAN settings from the port-channel interface rather than being suspended when its own settings differ. OSPF is computed the same way: a router alone on a link becomes its designated router at once (the 40-second wait is not simulated), neighbours go straight to their final state, an MTU mismatch is not modelled, and it is single-area IPv4 only. Port security is accepted on a trunk but only enforced on access ports. Unknown commands are rejected the way IOS rejects them rather than silently accepted.

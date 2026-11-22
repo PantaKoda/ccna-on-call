@@ -44,7 +44,7 @@ export class Lab {
     if (errors.length) throw new Error(`Level "${level.id}" has config errors:\n` + errors.join("\n"));
     this.initial = {};
     for (const dn of this.net.order) if (!isHost(this.net.devs[dn])) this.initial[dn] = runningConfig(this.net.devs[dn]);
-    this.net.touch();
+    this.net.boot();            // the lab starts as if every device had just been powered on
     this.net.collectEvents();
     for (const dn of this.net.order) this.net.takeLogs(dn);
   }

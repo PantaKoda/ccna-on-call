@@ -27,8 +27,9 @@ export const EXAMS = {
 // v1 / v2: the domain the topic is shown under in that exam, or null when the
 // exam does not include it (so v2: null means "v1 exclusive").
 // `match` sorts exam questions into the topic by their wording (first match
-// wins, in this order). `domain` marks the catch-all topic for imported
-// questions of a v1.1 domain that match nothing.
+// wins, in this order). `domain` marks the catch-all topic for questions of a
+// v1.1 domain that match nothing. Topics without a pattern (netops, capstone,
+// fundamentals) only receive questions that name them or fall through to them.
 export const TOPICS = [
   { id: "ospf", v1: 3, v2: 3, name: "OSPF", blurb: "Link-state routing: neighbours, areas, cost and the router ID.",
     match: /\bospf|link[- ]state|router[- ]id\b|designated router|\bbdr\b|hello (timer|interval)|\blsa\b/i },
@@ -38,12 +39,16 @@ export const TOPICS = [
     match: /\bipsec\b|\bvpns?\b|\bike\b|\bgre\b|\besp\b|tunnel mode|transport mode/i },
   { id: "wireless", v1: 2, v2: 1, name: "Wireless", blurb: "Bands and channels, RF behaviour, interference and Wi-Fi security.",
     match: /wireless|wi-?fi|\bssids?\b|\bwlcs?\b|access points?|\bwpa\d?\b|802\.11|\bcapwap\b|lightweight ap|\brf\b/i },
+  { id: "automation", v1: 6, v2: null, name: "Automation and programmability", domain: 6, blurb: "Controllers, SDN, REST APIs, JSON and configuration tools.",
+    match: /\bsdn\b|software[- ]defined|\brest(ful)? apis?\b|\brestful\b|\brestconf\b|\bnetconf\b|\byang\b|\bjson\b|\bxml\b|\bapis?\b|\bpuppet\b|\bchef\b|\bterraform\b|\bansible\b|\bplaybooks?\b|dna center|catalyst center|controller-based|northbound|southbound|\bcrud\b|(control|data|management) plane|configuration management|\bopenflow\b/i },
   { id: "security", v1: 5, v2: 4, name: "Security concepts and layer 2 defences", domain: 5, blurb: "AAA, passwords, and defences such as DHCP snooping and storm control.",
     match: /dhcp snooping|arp inspection|\bdai\b|\baaa\b|tacacs|radius|phishing|social engineering|multi-?factor|802\.1x|storm[- ]control|ra guard/i },
   { id: "dhcp", v1: 4, v2: 1, name: "DHCP", blurb: "Handing out addresses automatically, and relaying requests across subnets.",
     match: /\bdhcp|helper-address|\bapipa\b|169\.254/i },
   { id: "ipv6", v1: 1, v2: 1, name: "IPv6", blurb: "Address format and types, EUI-64, prefix sizes and static routes.",
     match: /\bipv6\b|eui-?64|link-local|unique local|\bslaac\b|global unicast|\bndp\b|::\/|[0-9a-f]{1,4}::/i },
+  { id: "switching", v1: 2, v2: 2, name: "Spanning tree, EtherChannel and edge ports", domain: 2, blurb: "Rapid PVST+, port channels, CDP and LLDP, and ports for phones and access points.",
+    match: /spanning[- ]tree|\bstp\b|\brstp\b|\bpvst|802\.1[dw]\b|portfast|\bbpdu|root (bridge|port|guard)|designated port|etherchannel|port[- ]channel|\blacp\b|\bpagp\b|channel-group|\bcdp\b|\blldp\b|\bpoe\b|power over ethernet|voice vlan/i },
   { id: "l2security", v1: 5, v2: 4, name: "Port security", blurb: "Limiting which devices may use a switch port.",
     match: /port[- ]security|sticky|err-?disabled|violation mode/i },
   { id: "acl", v1: 5, v2: 4, name: "Access lists", blurb: "Permit and deny rules, wildcard masks and where to apply them.",
@@ -52,6 +57,8 @@ export const TOPICS = [
     match: /\bssh\b|\btelnet\b|\bvty\b|crypto key|login local|transport input/i },
   { id: "monitoring", v1: 4, v2: 5, name: "Syslog and SNMP", blurb: "Reading log messages, severity levels and facilities, and what SNMP does.",
     match: /\bsyslog\b|\bsnmp|severity level|logging (trap|host|buffered|console)|show logging|\bmib\b/i },
+  { id: "services", v1: 4, v2: 4, name: "Network services", domain: 4, blurb: "DNS records, file transfer, and in v1.1 also NTP and quality of service.",
+    match: /\bdns\b|name resolution|\bntp\b|stratum|\bqos\b|quality of service|\bdscp\b|\bpolicing\b|\bshaping\b|queu(e)?ing|\btftp\b|\bftp\b|\bscp\b|\bsftp\b/i },
   { id: "intervlan", v1: 2, v2: 2, name: "Inter-VLAN routing", blurb: "Router on a stick: one trunk, one subinterface per VLAN.",
     match: /router[- ]on[- ]a[- ]stick|subinterface|inter-?vlan|encapsulation dot1q|\bsvi\b/i },
   { id: "vlans", v1: 2, v2: 2, name: "VLANs and trunks", blurb: "Separate broadcast domains on one switch, and carrying them between switches.",
@@ -70,10 +77,7 @@ export const TOPICS = [
     match: /running[- ]config|startup[- ]config|\bnvram\b|privileged|user exec|global configuration|enable secret|enable password|password-encryption|\bhostname\b|banner|console (line|port|password)/i },
   { id: "addressing", v1: 1, v2: 1, name: "Interfaces and addressing", blurb: "Addresses on router interfaces, hosts and switch management.",
     match: /\bip address\b|default[- ]gateway|administratively down|show ip interface brief|no shutdown/i },
-  { id: "automation", v1: 6, v2: null, name: "Automation and programmability", domain: 6, blurb: "Controllers, SDN, REST APIs, JSON and configuration tools." },
   { id: "netops", v1: null, v2: 5, name: "Network operations and Ansible", blurb: "Ways to manage a network, and running changes with Ansible." },
-  { id: "services", v1: 4, v2: 4, name: "Network services", domain: 4, blurb: "DNS records, file transfer, and in v1.1 also NTP and quality of service." },
-  { id: "switching", v1: 2, v2: 2, name: "Spanning tree, EtherChannel and edge ports", domain: 2, blurb: "Rapid PVST+, port channels, CDP and LLDP, and ports for phones and access points." },
   { id: "fundamentals", v1: 1, v2: 1, name: "Network fundamentals", domain: 1, blurb: "The OSI and TCP/IP models, Ethernet, cabling and interface errors." },
   { id: "capstone", v1: 0, v2: 0, name: "Troubleshooting and full builds", blurb: "A method for outages, the tools to use, and building a site from a design." },
 ];
@@ -116,16 +120,33 @@ export const LEVEL_TOPIC = {
 
 const strip = html => String(html).replace(/<[^>]+>/g, " ");
 
-// Works for the built-in questions and for an imported bank alike: the wording
-// of the question decides, and the v1.1 exam domain is the fallback.
+// Works for the built-in questions and for an imported bank alike.
+//
+// A question filed under one of the six v1.1 domains is tried against the
+// topics of that domain first: its own wording, then its answer options. Only
+// then may its wording place it in another domain (a wireless question in the
+// fundamentals chapter belongs with the wireless theory). The options are never
+// used across domains, because one wrong answer that mentions SNMP or an ACL
+// would drag an unrelated question there.
+//
+// A question with no domain (a mixed practice exam in an imported bank) has
+// only its wording and options to go by.
 export function topicOfQuestion(q) {
   if (q.t && TOPIC_BY_ID.has(q.t)) return q.t;     // set explicitly by the author
-  // the question text decides; the options are only consulted if it says nothing
-  for (const text of [strip(q.q), q.o.map(strip).join(" ")]) {
-    for (const t of TOPICS) if (t.match && t.match.test(text)) return t.id;
-  }
+  const text = strip(q.q), options = q.o.map(strip).join(" ");
+  const first = (list, s) => list.find(t => t.match && t.match.test(s));
   const general = TOPICS.find(t => t.domain === q.ch);
-  return general ? general.id : "fundamentals";
+  if (general) {
+    const own = TOPICS.filter(t => t.v1 === q.ch);
+    return (first(own, text) || first(own, options) || first(TOPICS, text) || general).id;
+  }
+  return (first(TOPICS, text) || first(TOPICS, options) || TOPIC_BY_ID.get("fundamentals")).id;
+}
+
+// The v1.1 domain a question counts toward: the one it was filed under, or its
+// topic's domain when it came from a mixed practice exam.
+export function v1DomainOf(q, topicId) {
+  return q.ch >= 1 && q.ch <= 6 ? q.ch : TOPIC_BY_ID.get(topicId).v1;
 }
 
 // Is this question part of the given exam version? A question can be limited

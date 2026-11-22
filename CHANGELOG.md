@@ -4,6 +4,36 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+This release follows a review of all the learning material for accuracy. Most of its points were right and are fixed here; a few were not and are left as they were.
+
+### Added
+
+- OSPF in the simulator is closer to IOS. The designated router election is no longer pre-emptive: a DR keeps its role until it leaves the link, and priority 0 never stands. Two routers that are neither DR nor BDR show each other as `2WAY/DROTHER`.
+- `clear ip ospf process` (with its yes/no question) restarts OSPF. A `router-id` typed on a router that already has neighbours now waits for it, with the same message IOS prints.
+- `ip ospf network point-to-point` works: no DR on that link, and the neighbour shows `FULL/ -`. One end of each type still reaches FULL but learns no routes, as on real routers.
+- OSPF cost now comes from the interface bandwidth: `auto-cost reference-bandwidth` and `bandwidth` change it, and `ip ospf cost` overrides both.
+- `ip ospf dead-interval`, and `show ip ospf interface <interface>` with the network type, cost, DR, BDR and timers.
+- Switch ports negotiate trunks (DTP). `switchport mode dynamic desirable` forms a trunk with a `dynamic auto` or trunk port, two `dynamic auto` ports stay access links, and `switchport nonegotiate` stops a trunk from answering. `show interfaces trunk` and `show interfaces switchport` show the mode.
+- A static route is installed when its next hop can be reached through another route, not only through a connected subnet (a recursive lookup). The default route does not count.
+- Theory: following one packet end to end (which addresses change at each hop), VLSM, route summarisation, the DTP table, OSPF neighbour states, the three router advertisement flags with duplicate address detection, SNMPv3 security levels, the spanning tree tie-breakers, HSRP and VRRP virtual MAC addresses, and ACL details (editing by sequence number, the router's own traffic, `established`).
+- 15 new questions on the points above. The bank now has 188.
+- New handbook rows for the OSPF and trunk commands.
+
+### Changed
+
+- A router subinterface refuses an IP address until `encapsulation dot1q` is set, as the theory page already said.
+- A local account with `privilege 15` lands at the `#` prompt when it logs in over SSH or Telnet.
+- `no ip domain lookup` is accepted as well as `no ip domain-lookup`.
+- Port security is accepted on a static trunk; it is still refused on a dynamic port.
+- In the "Fix a broken VLAN path" variant, the uplink fault is now a port forced to access mode. A port merely left at its default would negotiate a trunk by itself.
+- With an imported question bank: questions from its mixed practice exams are now used in the v1.1 promotion exams (they were silently left out), questions printed twice are shown once, and far fewer land in the wrong topic. A wrong answer that mentions SNMP or an ACL no longer pulls a question into that topic.
+
+### Fixed
+
+- Theory corrections: router to PC needs a crossover cable; what each side of a duplex mismatch counts; frame size with a VLAN tag; `/31` and `/32` as the exceptions to "minus 2"; the WPA3 ciphers; the backup port role and why Cisco prints `BLK`; `root primary` is worked out once, not kept up to date; the two forms of BPDU Filter; what really happens with `on` against LACP; metric and administrative distance build the table, longest match forwards the packet; static route next hops; router ID changes; DNS zone transfers; what the SCP server needs; `enable` without a secret; and what Ansible's ping module means on network devices.
+- Three questions corrected to match (static next hop, EtherChannel `on`, Ansible ping), and three questions that were filed under the wrong topic.
+- The capstone's worked solution makes the user-facing subinterfaces passive in OSPF.
+
 ## [0.9.2] - 2026-11-22
 
 ### Fixed

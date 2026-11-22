@@ -46,13 +46,13 @@ function newIface(d, name) {
     name, ip: null, mask: null, desc: "", misc: [],
     shutdown: d.kind === "router" ? kind === "phys" : name === "Vlan1",
     nat: null, aclIn: null, aclOut: null, helpers: [],
-    ospfCost: null, ospfPri: null, ospfArea: null, ospfHello: null,
+    ospfCost: null, ospfPri: null, ospfArea: null, ospfHello: null, ospfDead: null, ospfNet: null,
     dot1q: null, dot1qNative: false, channel: null, errdisabled: null,
   };
   // switch ports and port-channels carry layer 2 settings
   if (d.kind === "switch" && (kind === "phys" || kind === "po")) {
     i.sw = {
-      mode: null, accessVlan: 1, allowed: null, native: 1, portfast: false, bpduguard: false, guard: null, stpCost: null,
+      mode: null, dtp: "auto", nonegotiate: false, accessVlan: 1, allowed: null, native: 1, portfast: false, bpduguard: false, guard: null, stpCost: null,
       ps: { on: false, max: 1, violation: "shutdown", sticky: false },
     };
   }
@@ -117,7 +117,7 @@ export function makeDevice(spec) {
   Object.assign(d, {
     vlans: d.kind === "switch" ? { 1: { name: "default" } } : null,
     stp: d.kind === "switch" ? { mode: "pvst", prio: {} } : null,       // prio[vlan] = configured bridge priority
-    routes: [], ospf: {}, acls: {}, natRules: [], natLog: [],
+    routes: [], ospf: {}, ospfRid: null, acls: {}, natRules: [], natLog: [],
     dhcp: { excluded: [], pools: {} }, defaultGw: null,
     enableSecret: null, enablePassword: null, pwEncrypt: false, banner: null,
     domainLookup: true, domainName: null, users: {}, rsa: null, sshVersion: null,
@@ -135,8 +135,9 @@ export function makeDevice(spec) {
   return d;
 }
 
-export function ospfCost(name) {
-  return name.startsWith("Serial") ? 64 : 1;
+// Default interface bandwidth in kb/s, as IOS reports it. OSPF derives its cost from this.
+export function defaultBandwidth(name) {
+  return name.startsWith("Gig") ? 1000000 : name.startsWith("Fast") ? 100000 : name.startsWith("Serial") ? 1544 : name.startsWith("Loop") ? 8000000 : 10000;
 }
 
 // ---------- ACL evaluation ----------
@@ -184,6 +185,14 @@ export class Net {
     this.leaseMemo = {};
     this._st = null;
     this._snap = null;
+    this.ospfRole = {};        // "R1|GigabitEthernet0/0" -> DR | BDR | DROTHER, kept because the election is not pre-emptive
+  }
+  // Start every device as if it had just booted with its current configuration:
+  // OSPF picks its router ID again and every link holds a fresh DR election.
+  boot() {
+    for (const dn of this.order) if (this.devs[dn].ospf) this.devs[dn].ospfRid = null;
+    this.ospfRole = {};
+    this.touch();
   }
   add(d) { this.devs[d.name] = d; this.order.push(d.name); this.logs[d.name] = []; return d; }
   link(a, ai, b, bi) { this.links.push({ a, ai, b, bi }); }
@@ -209,7 +218,7 @@ export class Net {
         const x = st.status(dn, n);
         s.ifs[n] = (x.admin ? "A" : "a") + (x.up ? "U" : "u");
       }
-      for (const nb of st.nbrs[dn] || []) s.nbrs[`${intToIp(nb.rid)}|${nb.iface}`] = nb.pid;
+      for (const nb of st.nbrs[dn] || []) if (nb.state === "FULL") s.nbrs[`${intToIp(nb.rid)}|${nb.iface}`] = nb.pid;
       snap[dn] = s;
       const old = this._snap && this._snap[dn];
       if (!old) continue;
@@ -322,6 +331,23 @@ function compute(net) {
   };
   const dataUp = l => physUp(l.a, l.ai) && bstate(l.a, l.ai) !== "s" && bstate(l.b, l.bi) !== "s";
 
+  // Is this switch port trunking? A static trunk always is and an access port never is.
+  // A dynamic port asks its neighbour (DTP): "desirable" starts the negotiation,
+  // "auto" only answers it, and a trunk set to "nonegotiate" stays silent.
+  const trunking = (dn, n) => {
+    const d = devs[dn], sw = d.ifaces[n] && d.ifaces[n].sw;
+    if (!sw) return false;
+    if (sw.mode === "trunk") return true;
+    if (sw.mode === "access") return false;
+    const phys = ifKind(n) === "po" ? d.ifOrder.find(m => bundle[`${dn}|${m}`] && bundle[`${dn}|${m}`].po === n && bundle[`${dn}|${m}`].state === "P") : n;
+    const p = phys && physUp(dn, phys) ? net.peer(dn, phys) : null;
+    if (!p || devs[p.dev].kind !== "switch") return false;
+    const o = devs[p.dev].ifaces[logical(p.dev, p.ifn)].sw;
+    if (!o || o.mode === "access") return false;
+    if (o.mode === "trunk") return !o.nonegotiate;
+    return sw.dtp === "desirable" || o.dtp === "desirable";
+  };
+
   // What a link end carries: tag ("u" = untagged, or a VLAN id) -> segment key.
   const side = (dn, ifn) => {
     const d = devs[dn], m = new Map();
@@ -335,8 +361,8 @@ function compute(net) {
       }
       return m;
     }
-    const sw = d.ifaces[logical(dn, ifn)].sw;
-    if (sw.mode === "trunk") {
+    const lp = logical(dn, ifn), sw = d.ifaces[lp].sw;
+    if (trunking(dn, lp)) {
       for (const v of Object.keys(d.vlans).map(Number)) {
         if (sw.allowed && !sw.allowed.includes(v)) continue;
         m.set(v === sw.native ? "u" : v, `${dn}#${v}`);
@@ -513,34 +539,67 @@ function compute(net) {
   }
 
   // ----- routing tables: connected + static -----
-  const rt = {};
+  const rt = {}, waiting = {};
   const routers = net.order.filter(dn => devs[dn].kind === "router");
+  // A static route is installed once its next hop can be resolved: through a
+  // connected subnet, or through another route that is already in the table.
+  // As on IOS, the default route alone does not count. `fnh` is the neighbour
+  // packets are really handed to when the route was resolved through another.
+  const resolveStatics = dn => {
+    const list = rt[dn];
+    for (let again = true; again;) {
+      again = false;
+      for (const r of [...waiting[dn]]) {
+        let via = null;
+        for (const c of list) if (c.mask !== 0 && ((r.nh ^ c.net) & c.mask) === 0 && (!via || c.len > via.len)) via = c;
+        if (!via) continue;
+        list.push({ net: r.net, mask: r.mask, len: maskLen(r.mask), proto: "S", ad: r.ad || 1, metric: 0, iface: via.iface, nh: r.nh, fnh: via.proto === "C" ? null : via.fnh ?? via.nh ?? null });
+        waiting[dn].delete(r);
+        again = true;
+      }
+    }
+  };
   for (const dn of routers) {
     const d = devs[dn], list = [];
     for (const i of l3[dn]) {
       list.push({ net: netOf(i.ip, i.mask), mask: i.mask, len: maskLen(i.mask), proto: "C", ad: 0, metric: 0, iface: i.name, nh: null });
     }
-    const connectedFor = ip => {
-      let best = null;
-      for (const r of list) if (r.proto === "C" && ((ip ^ r.net) & r.mask) === 0 && (!best || r.len > best.len)) best = r;
-      return best;
-    };
+    waiting[dn] = new Set();
     for (const r of d.routes) {
-      let iface = r.iface;
-      if (iface) { if (!status(dn, iface).up) continue; }
-      else { const c = connectedFor(r.nh); if (!c) continue; iface = c.iface; }
-      list.push({ net: r.net, mask: r.mask, len: maskLen(r.mask), proto: "S", ad: r.ad || 1, metric: 0, iface, nh: r.nh ?? null });
+      if (!r.iface) { waiting[dn].add(r); continue; }
+      if (status(dn, r.iface).up) list.push({ net: r.net, mask: r.mask, len: maskLen(r.mask), proto: "S", ad: r.ad || 1, metric: 0, iface: r.iface, nh: r.nh ?? null });
     }
     rt[dn] = list;
+    resolveStatics(dn);
   }
 
   // ----- OSPF -----
   const oifs = {}, rids = {}, nbrs = {};
+  const bandwidth = (d, name) => {
+    const set = n => { const m = d.ifaces[n] && d.ifaces[n].misc.find(x => x.startsWith("bandwidth ")); return m ? Number(m.split(" ")[1]) : null; };
+    return set(name) ?? set(name.split(".")[0]) ?? defaultBandwidth(name);
+  };
   for (const dn of routers) {
     const d = devs[dn], list = [];
     nbrs[dn] = [];
-    for (const [pidS, p] of Object.entries(d.ospf)) {
+    const procs = Object.values(d.ospf);
+    // The router ID is chosen when the process starts and then kept, as on IOS:
+    // a later change waits for "clear ip ospf process".
+    if (!procs.length) d.ospfRid = null;
+    else if (d.ospfRid == null) {
+      let rid = procs.map(p => p.routerId).find(x => x != null) ?? null;
+      if (rid == null) {
+        const loops = d.ifOrder.filter(n => ifKind(n) === "loop" && d.ifaces[n].ip != null && !d.ifaces[n].shutdown).map(n => d.ifaces[n].ip);
+        const all = l3[dn].map(i => i.ip);
+        rid = loops.length ? Math.max(...loops) : all.length ? Math.max(...all) : null;
+      }
+      d.ospfRid = rid;
+    }
+    rids[dn] = d.ospfRestarting ? null : d.ospfRid;
+    if (!d.ospfRestarting) for (const [pidS, p] of Object.entries(d.ospf)) {
       const pid = Number(pidS);
+      const refLine = p.misc.find(x => x.startsWith("auto-cost reference-bandwidth "));
+      const ref = refLine ? Number(refLine.split(" ")[2]) : 100;                  // Mb/s
       for (const i of l3[dn]) {
         if (list.some(x => x.name === i.name)) continue;
         const ifc = d.ifaces[i.name];
@@ -550,21 +609,16 @@ function compute(net) {
         if (area === null) continue;
         const loop = ifKind(i.name) === "loop";
         const passive = loop || (p.passiveDefault ? !p.noPassive.includes(i.name) : p.passive.includes(i.name));
+        const hello = ifc.ospfHello ?? 10;
         list.push({
           pid, name: i.name, ip: i.ip, mask: i.mask, area, key: i.key, passive, loop,
-          cost: ifc.ospfCost ?? ospfCost(i.name), pri: ifc.ospfPri ?? 1, hello: ifc.ospfHello ?? 10,
+          cost: ifc.ospfCost ?? Math.max(1, Math.floor(ref * 1000 / bandwidth(d, i.name))),
+          pri: ifc.ospfPri ?? 1, hello, dead: ifc.ospfDead ?? hello * 4,
+          ntype: loop ? "loop" : ifc.ospfNet ?? (i.name.startsWith("Serial") ? "p2p" : "broadcast"),
         });
       }
     }
     oifs[dn] = list;
-    const procs = Object.values(d.ospf);
-    let rid = procs.map(p => p.routerId).find(x => x != null) ?? null;
-    if (rid == null && procs.length) {
-      const loops = d.ifOrder.filter(n => ifKind(n) === "loop" && d.ifaces[n].ip != null && !d.ifaces[n].shutdown).map(n => d.ifaces[n].ip);
-      const all = l3[dn].map(i => i.ip);
-      rid = loops.length ? Math.max(...loops) : all.length ? Math.max(...all) : null;
-    }
-    rids[dn] = rid;
   }
   const sameL2 = (dnA, a, dnB, b) => {
     if (a.name.startsWith("Serial") || b.name.startsWith("Serial")) {
@@ -573,29 +627,58 @@ function compute(net) {
     }
     return find(a.key) === find(b.key);
   };
-  const segs = {};
+
+  // DR and BDR on broadcast links. Priority 0 never stands, and the election is
+  // not pre-emptive: whoever holds a role keeps it until it leaves the link.
+  const groups = new Map();
+  for (const dn of routers) {
+    if (rids[dn] == null) continue;
+    for (const o of oifs[dn]) {
+      if (o.passive || o.ntype !== "broadcast") continue;
+      const gk = `${find(o.key)}/${netOf(o.ip, o.mask)}/${o.mask}/${o.area}/${o.hello}/${o.dead}`;
+      if (!groups.has(gk)) groups.set(gk, []);
+      groups.get(gk).push({ dn, o, k: `${dn}|${o.name}` });
+    }
+  }
+  const roleNow = {};
+  for (const members of groups.values()) {
+    const elig = members.filter(m => m.o.pri > 0).sort((x, y) => y.o.pri - x.o.pri || rids[y.dn] - rids[x.dn]);
+    const held = r => elig.find(m => net.ospfRole[m.k] === r);
+    const dr = held("DR") || held("BDR") || elig[0] || null;
+    const rest = elig.filter(m => m !== dr);
+    const bdr = rest.find(m => net.ospfRole[m.k] === "BDR") || rest[0] || null;
+    for (const m of members) {
+      m.o.role = roleNow[m.k] = m === dr ? "DR" : m === bdr ? "BDR" : "DROTHER";
+      m.o.dr = dr ? { rid: rids[dr.dn], ip: dr.o.ip } : null;
+      m.o.bdr = bdr ? { rid: rids[bdr.dn], ip: bdr.o.ip } : null;
+    }
+  }
+  net.ospfRole = roleNow;
+
+  const lead = r => r === "DR" || r === "BDR";
   for (let x = 0; x < routers.length; x++) {
     for (let y = x + 1; y < routers.length; y++) {
       const A = routers[x], B = routers[y];
       for (const a of oifs[A]) for (const b of oifs[B]) {
         if (a.passive || b.passive || a.mask !== b.mask || ((a.ip ^ b.ip) & a.mask) !== 0) continue;
-        if (a.area !== b.area || a.hello !== b.hello) continue;
+        if (a.area !== b.area || a.hello !== b.hello || a.dead !== b.dead) continue;
         if (rids[A] == null || rids[B] == null || rids[A] === rids[B]) continue;
         if (!sameL2(A, a, B, b)) continue;
-        const serial = a.name.startsWith("Serial");
-        const seg = `${find(a.key)}/${netOf(a.ip, a.mask)}`;
-        (segs[seg] ||= new Map()).set(A, { rid: rids[A], pri: a.pri }).set(B, { rid: rids[B], pri: b.pri });
-        nbrs[A].push({ dev: B, rid: rids[B], iface: a.name, addr: b.ip, pri: b.pri, cost: a.cost, pid: a.pid, seg, serial });
-        nbrs[B].push({ dev: A, rid: rids[A], iface: b.name, addr: a.ip, pri: a.pri, cost: b.cost, pid: b.pid, seg, serial });
+        // Two point-to-point ends skip the election. One end of each type still
+        // reaches FULL, but the two describe the link differently, so no routes
+        // are learned across it.
+        const p2p = a.ntype === "p2p" && b.ntype === "p2p", mismatch = a.ntype !== b.ntype;
+        const entry = (me, other, otherDev) => {
+          let role = other.role || "DROTHER", myRole = me.role || "DR", state = "FULL", usable = true;
+          if (p2p) { role = "-"; myRole = "P2P"; }
+          else if (mismatch) { usable = false; if (me.ntype === "p2p") { role = "-"; myRole = "P2P"; } else role = "DROTHER"; }
+          else if (!me.dr) { state = "2WAY"; usable = false; }          // nobody may be DR: the routers never synchronise
+          else if (!lead(role) && !lead(myRole)) state = "2WAY";         // two DROTHERs exchange routes through the DR
+          return { dev: otherDev, rid: rids[otherDev], iface: me.name, addr: other.ip, pri: other.pri, cost: me.cost, pid: me.pid, dead: me.dead, role, myRole, state, usable };
+        };
+        nbrs[A].push(entry(a, b, B));
+        nbrs[B].push(entry(b, a, A));
       }
-    }
-  }
-  for (const dn of routers) {
-    for (const nb of nbrs[dn]) {
-      if (nb.serial) { nb.role = "-"; continue; }
-      const order = [...segs[nb.seg].entries()].sort((p, q) => q[1].pri - p[1].pri || q[1].rid - p[1].rid).map(e => e[0]);
-      nb.role = order[0] === nb.dev ? "DR" : order[1] === nb.dev ? "BDR" : "DROTHER";
-      nb.myRole = order[0] === dn ? "DR" : order[1] === dn ? "BDR" : "DROTHER";
     }
   }
   for (const s of routers) {
@@ -607,6 +690,7 @@ function compute(net) {
       if (u === null) break;
       done.add(u);
       for (const nb of nbrs[u]) {
+        if (!nb.usable) continue;
         const nd = dist[u] + nb.cost;
         if (dist[nb.dev] === undefined || nd < dist[nb.dev]) {
           dist[nb.dev] = nd;
@@ -633,6 +717,7 @@ function compute(net) {
       }
     }
     rt[s].push(...cand.values());
+    resolveStatics(s);          // a static route may point at a next hop that only OSPF knows how to reach
   }
   // keep the best route per prefix (lowest administrative distance, then metric)
   for (const dn of routers) {
@@ -664,7 +749,7 @@ function compute(net) {
     }
     let best = null;
     for (const r of rt[dn]) if (((ip ^ r.net) & r.mask) === 0 && (!best || r.len > best.len)) best = r;
-    return best ? { iface: best.iface, nh: best.nh ?? ip, route: best } : null;
+    return best ? { iface: best.iface, nh: best.fnh ?? best.nh ?? ip, route: best } : null;
   };
 
   const l2resolve = (dn, ifn, nh) => {
@@ -764,7 +849,7 @@ function compute(net) {
     return { ok: true, target: req.dev, hops: req.hops, back: rep.hops };
   }
 
-  const st = { net, find, status, l3, pcs, rt, nbrs, oifs, rids, owns, lookup, reach, leases: {}, vlanActive, bundle, stp, logical };
+  const st = { net, find, status, l3, pcs, rt, nbrs, oifs, rids, owns, lookup, reach, leases: {}, vlanActive, bundle, stp, logical, trunking };
 
   // ----- DHCP: resolve leases for hosts set to DHCP -----
   const used = new Set();

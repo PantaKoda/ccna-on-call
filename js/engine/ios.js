@@ -2,7 +2,7 @@
 // abbreviation, "?" help, tab completion, show commands, running-config.
 
 import { ipToInt, intToIp, maskLen, lenMask, netOf, bcastOf } from "./ip.js";
-import { normIf, shortIf, ifKind, ensureIface, removeIface, fakeMac, ospfCost, isHost } from "./network.js";
+import { normIf, shortIf, ifKind, ensureIface, removeIface, fakeMac, defaultBandwidth, isHost } from "./network.js";
 
 // ---------------------------------------------------------------- registry
 const CMDS = {};
@@ -260,6 +260,8 @@ export function runningConfig(d) {
       if (s.native !== 1) add(` switchport trunk native vlan ${s.native}`);
       if (s.allowed) add(` switchport trunk allowed vlan ${vlanListText(s.allowed)}`);
       if (s.mode) add(` switchport mode ${s.mode}`);
+      else if (s.dtp === "desirable") add(" switchport mode dynamic desirable");
+      if (s.nonegotiate) add(" switchport nonegotiate");
       if (s.ps.on) add(" switchport port-security");
       if (s.ps.max !== 1) add(` switchport port-security maximum ${s.ps.max}`);
       if (s.ps.violation !== "shutdown") add(` switchport port-security violation ${s.ps.violation}`);
@@ -278,6 +280,8 @@ export function runningConfig(d) {
     if (i.ospfCost != null) add(` ip ospf cost ${i.ospfCost}`);
     if (i.ospfPri != null) add(` ip ospf priority ${i.ospfPri}`);
     if (i.ospfHello != null) add(` ip ospf hello-interval ${i.ospfHello}`);
+    if (i.ospfDead != null) add(` ip ospf dead-interval ${i.ospfDead}`);
+    if (i.ospfNet) add(` ip ospf network ${i.ospfNet === "p2p" ? "point-to-point" : "broadcast"}`);
     if (i.channel) add(` channel-group ${i.channel.id} mode ${i.channel.mode}`);
     for (const m of i.misc) add(` ${m}`);
     if (i.shutdown) add(" shutdown");
@@ -351,7 +355,7 @@ function showInterfaces(s, name) {
     out.push(`  Hardware is ${ifKind(n) === "phys" ? (gig ? "Gigabit Ethernet" : n.startsWith("Serial") ? "HD64570" : "Fast Ethernet") : ifKind(n) === "vlan" ? "EtherSVI" : "Virtual"}, address is ${fakeMac(d.name, d.ifOrder.indexOf(n))}`);
     if (i.desc) out.push(`  Description: ${i.desc}`);
     if (i.ip != null) out.push(`  Internet address is ${intToIp(i.ip)}/${maskLen(i.mask)}`);
-    out.push(`  MTU 1500 bytes, BW ${gig ? 1000000 : n.startsWith("Serial") ? 1544 : 100000} Kbit/sec, DLY ${gig ? 10 : 100} usec,`);
+    out.push(`  MTU 1500 bytes, BW ${Number((i.misc.find(x => x.startsWith("bandwidth ")) || "").split(" ")[1]) || defaultBandwidth(n)} Kbit/sec, DLY ${gig ? 10 : 100} usec,`);
     out.push("     reliability 255/255, txload 1/255, rxload 1/255");
     if (i.dot1q != null) out.push(`  Encapsulation 802.1Q Virtual LAN, Vlan ID ${i.dot1q}.`);
     if (ifKind(n) === "phys" && !n.startsWith("Serial")) out.push(`  ${b === "up" ? "Full-duplex" : "Auto-duplex"}, ${gig ? "1000Mb/s" : "100Mb/s"}, media type is RJ45`);
@@ -362,7 +366,7 @@ function showInterfaces(s, name) {
 
 function accessPortsOf(s, v) {
   const d = s.dev;
-  return d.ifOrder.filter(n => d.ifaces[n].sw && d.ifaces[n].sw.mode !== "trunk" && d.ifaces[n].sw.accessVlan === v && !isBundled(s, n));
+  return d.ifOrder.filter(n => d.ifaces[n].sw && !s.net.st.trunking(d.name, n) && d.ifaces[n].sw.accessVlan === v && !isBundled(s, n));
 }
 function showVlan(s) {
   const d = s.dev;
@@ -380,13 +384,13 @@ function showVlan(s) {
 
 function trunkPorts(s) {
   const d = s.dev;
-  return d.ifOrder.filter(n => d.ifaces[n].sw && d.ifaces[n].sw.mode === "trunk" && s.net.st.status(d.name, n).up && !isBundled(s, n));
+  return d.ifOrder.filter(n => d.ifaces[n].sw && s.net.st.trunking(d.name, n) && s.net.st.status(d.name, n).up && !isBundled(s, n));
 }
 function showTrunk(s) {
   const d = s.dev, ports = trunkPorts(s);
   if (!ports.length) return "";
   const out = ["Port        Mode         Encapsulation  Status        Native vlan"];
-  for (const n of ports) out.push(`${pad(shortIf(n), 11)} ${pad("on", 12)} ${pad("802.1q", 14)} ${pad("trunking", 13)} ${d.ifaces[n].sw.native}`);
+  for (const n of ports) out.push(`${pad(shortIf(n), 11)} ${pad(d.ifaces[n].sw.mode === "trunk" ? "on" : d.ifaces[n].sw.dtp, 12)} ${pad("802.1q", 14)} ${pad("trunking", 13)} ${d.ifaces[n].sw.native}`);
   out.push("", "Port        Vlans allowed on trunk");
   for (const n of ports) out.push(`${pad(shortIf(n), 11)} ${d.ifaces[n].sw.allowed ? vlanListText(d.ifaces[n].sw.allowed) : "1-4094"}`);
   out.push("", "Port        Vlans allowed and active in management domain");
@@ -408,7 +412,7 @@ function showIntStatus(s) {
     const po = ifKind(n) === "po";
     // a port-channel runs at the speed of its member ports and has no media type of its own
     const gig = po ? d.ifOrder.some(m => m.startsWith("Gig") && (s.net.st.bundle[d.name + "|" + m] || {}).po === n) : n.startsWith("Gig");
-    out.push(`${pad(shortIf(n), 9)} ${pad(i.desc.slice(0, 18), 18)} ${pad(!st.admin ? "disabled" : i.errdisabled ? "err-disabled" : st.up ? "connected" : (s.net.st.bundle[d.name + "|" + n] || {}).state === "s" ? "suspended" : "notconnect", 12)} ${pad(i.sw.mode === "trunk" ? "trunk" : i.sw.accessVlan, 10)} ${pad(st.up ? "a-full" : "auto", 7)} ${pad(st.up ? (gig ? "a-1000" : "a-100") : "auto", 6)} ${po ? "" : gig ? "10/100/1000BaseTX" : "10/100BaseTX"}`.trimEnd());
+    out.push(`${pad(shortIf(n), 9)} ${pad(i.desc.slice(0, 18), 18)} ${pad(!st.admin ? "disabled" : i.errdisabled ? "err-disabled" : st.up ? "connected" : (s.net.st.bundle[d.name + "|" + n] || {}).state === "s" ? "suspended" : "notconnect", 12)} ${pad(st.up && s.net.st.trunking(d.name, n) ? "trunk" : i.sw.accessVlan, 10)} ${pad(st.up ? "a-full" : "auto", 7)} ${pad(st.up ? (gig ? "a-1000" : "a-100") : "auto", 6)} ${po ? "" : gig ? "10/100/1000BaseTX" : "10/100BaseTX"}`.trimEnd());
   }
   return out.join("\n");
 }
@@ -420,9 +424,10 @@ function showSwitchport(s, n) {
   const vname = v => (d.vlans[v] ? d.vlans[v].name : "Inactive");
   return [
     `Name: ${shortIf(n)}`, "Switchport: Enabled",
-    `Administrative Mode: ${sw.mode === "trunk" ? "trunk" : sw.mode === "access" ? "static access" : "dynamic auto"}`,
-    `Operational Mode: ${!up ? "down" : sw.mode === "trunk" ? "trunk" : "static access"}`,
+    `Administrative Mode: ${sw.mode === "trunk" ? "trunk" : sw.mode === "access" ? "static access" : "dynamic " + sw.dtp}`,
+    `Operational Mode: ${!up ? "down" : s.net.st.trunking(d.name, n) ? "trunk" : "static access"}`,
     "Administrative Trunking Encapsulation: dot1q",
+    `Negotiation of Trunking: ${sw.mode === "access" || sw.nonegotiate ? "Off" : "On"}`,
     `Access Mode VLAN: ${sw.accessVlan} (${vname(sw.accessVlan)})`,
     `Trunking Native Mode VLAN: ${sw.native} (${vname(sw.native)})`,
     `Trunking VLANs Enabled: ${sw.allowed ? vlanListText(sw.allowed) : "ALL"}`,
@@ -460,19 +465,43 @@ function showOspfNbr(s) {
   const nb = s.net.st.nbrs[s.dev.name] || [];
   if (!nb.length) return "";
   const out = ["Neighbor ID     Pri   State           Dead Time   Address         Interface"];
-  for (const n of nb) out.push(`${pad(intToIp(n.rid), 15)} ${String(n.pri).padStart(3)}   ${pad("FULL/" + (n.role === "-" ? "  -" : n.role), 15)} 00:00:3${n.pri % 10}    ${pad(intToIp(n.addr), 15)} ${n.iface}`);
+  for (const n of nb) {
+    const left = Math.max(1, n.dead - 1 - (n.pri % 9));
+    out.push(`${pad(intToIp(n.rid), 15)} ${String(n.role === "-" ? 0 : n.pri).padStart(3)}   ${pad(n.state + "/" + (n.role === "-" ? "  -" : n.role), 15)} 00:${String(Math.floor(left / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}    ${pad(intToIp(n.addr), 15)} ${n.iface}`);
+  }
   return out.join("\n");
 }
+const ospfIfState = i => (i.loop ? "LOOP" : i.ntype === "p2p" ? "P2P" : i.role || "DR");
 function showOspfIf(s) {
   const st = s.net.st, o = st.oifs[s.dev.name] || [];
   if (!o.length) return "";
   const out = ["Interface    PID   Area            IP Address/Mask    Cost  State Nbrs F/C"];
   for (const i of o) {
     const nb = (st.nbrs[s.dev.name] || []).filter(n => n.iface === i.name);
-    const state = i.loop ? "LOOP" : i.name.startsWith("Serial") ? "P2P" : nb[0] ? nb[0].myRole : "DR";
-    out.push(`${pad(shortIf(i.name), 12)} ${pad(i.pid, 5)} ${pad(i.area, 15)} ${pad(intToIp(i.ip) + "/" + maskLen(i.mask), 18)} ${pad(i.cost, 5)} ${pad(state, 5)} ${nb.length}/${nb.length}`);
+    out.push(`${pad(shortIf(i.name), 12)} ${pad(i.pid, 5)} ${pad(i.area, 15)} ${pad(intToIp(i.ip) + "/" + maskLen(i.mask), 18)} ${pad(i.cost, 5)} ${pad(ospfIfState(i), 5)} ${nb.filter(n => n.state === "FULL").length}/${nb.length}`);
   }
   return out.join("\n");
+}
+// The long form: network type, cost, who the DR is and the timers.
+function showOspfIfDetail(s, only) {
+  const st = s.net.st, d = s.dev, rid = st.rids[d.name];
+  const out = [];
+  for (const i of st.oifs[d.name] || []) {
+    if (only && i.name !== only) continue;
+    const nb = (st.nbrs[d.name] || []).filter(n => n.iface === i.name);
+    out.push(`${i.name} is up, line protocol is up`, `  Internet Address ${intToIp(i.ip)}/${maskLen(i.mask)}, Area ${i.area}`,
+      `  Process ID ${i.pid}, Router ID ${rid != null ? intToIp(rid) : "0.0.0.0"}, Network Type ${i.loop ? "LOOPBACK" : i.ntype === "p2p" ? "POINT_TO_POINT" : "BROADCAST"}, Cost: ${i.cost}`);
+    if (i.loop) { out.push("  Loopback interface is treated as a stub Host", ""); continue; }
+    out.push(`  Transmit Delay is 1 sec, State ${i.passive && i.ntype !== "p2p" ? "DR" : ospfIfState(i)}${i.ntype === "p2p" ? "" : ", Priority " + i.pri}`);
+    if (i.dr) out.push(`  Designated Router (ID) ${intToIp(i.dr.rid)}, Interface address ${intToIp(i.dr.ip)}`);
+    if (i.bdr) out.push(`  Backup Designated router (ID) ${intToIp(i.bdr.rid)}, Interface address ${intToIp(i.bdr.ip)}`);
+    out.push(`  Timer intervals configured, Hello ${i.hello}, Dead ${i.dead}, Wait ${i.dead}, Retransmit 5`);
+    if (i.passive) out.push("    No Hellos (Passive interface)");
+    out.push(`  Neighbor Count is ${nb.length}, Adjacent neighbor count is ${nb.filter(n => n.state === "FULL").length}`);
+    for (const n of nb) if (n.state === "FULL") out.push(`    Adjacent with neighbor ${intToIp(n.rid)}${n.role === "DR" ? "  (Designated Router)" : n.role === "BDR" ? "  (Backup Designated Router)" : ""}`);
+    out.push("");
+  }
+  return out.join("\n").trimEnd();
 }
 function showIpProtocols(s) {
   const d = s.dev, out = [];
@@ -536,7 +565,7 @@ function showMac(s) {
     const p = s.net.peer(d.name, n);
     if (!p || s.net.devs[p.dev].kind === "switch") continue;
     const sticky = i.sw.ps.on && i.sw.ps.sticky;
-    out.push(`${String(i.sw.mode === "trunk" ? i.sw.native : i.sw.accessVlan).padStart(4)}    ${fakeMac(p.dev)}    ${sticky ? "STATIC " : "DYNAMIC"}     ${shortIf(n)}`);
+    out.push(`${String(s.net.st.trunking(d.name, n) ? i.sw.native : i.sw.accessVlan).padStart(4)}    ${fakeMac(p.dev)}    ${sticky ? "STATIC " : "DYNAMIC"}     ${shortIf(n)}`);
   }
   return out.join("\n");
 }
@@ -607,7 +636,7 @@ function stpPorts(s, v) {
   for (const n of d.ifOrder) {
     const i = d.ifaces[n];
     if (!i.sw || !st.status(d.name, n).up || isBundled(s, n)) continue;
-    const carries = i.sw.mode === "trunk" ? !i.sw.allowed || i.sw.allowed.includes(v) : i.sw.accessVlan === v;
+    const carries = st.trunking(d.name, n) ? !i.sw.allowed || i.sw.allowed.includes(v) : i.sw.accessVlan === v;
     if (!carries) continue;
     const known = tree && tree.ports[n];
     const cost = i.sw.stpCost ?? (n.startsWith("Gig") ? 4 : n.startsWith("Port") ? 3 : 19);
@@ -956,6 +985,21 @@ reg("priv", "reload", () => "% Reload is disabled in this lab. Use the Reset Lab
 reg("priv", "erase startup-config", s => { s.dev.startup = null; return "[OK]\nErase of nvram: complete"; });
 reg(EXEC, "terminal <rest>", () => {});
 reg("priv", "clear ip nat translation <rest>", s => { s.dev.natLog = []; });
+// Restart OSPF: the neighbours see this router leave and hold their election
+// without it, then it comes back with whatever router ID its configuration gives.
+reg("priv", "clear ip ospf process", s => {
+  if (!Object.keys(s.dev.ospf).length) return;
+  s.ask("Reset ALL OSPF processes? [no]: ", a => {
+    if (!/^y/i.test(a.trim())) return;
+    const d = s.dev;
+    d.ospfRestarting = true;
+    s.net.touch();
+    s.net.collectEvents();
+    d.ospfRestarting = false;
+    d.ospfRid = null;
+    s.net.touch();
+  });
+}, ["router"]);
 reg("priv", "clear <rest>", () => {});
 reg("priv", "debug <rest>", () => "% Debugging is not available in this lab.");
 reg("priv", "undebug all", () => "All possible debugging has been turned off");
@@ -1012,7 +1056,8 @@ show("vlan brief", showVlan, ["switch"]);
 show("ip route", showIpRoute);
 show("ip ospf neighbor", showOspfNbr, ["router"]);
 show("ip ospf interface brief", showOspfIf, ["router"]);
-show("ip ospf interface", showOspfIf, ["router"]);
+show("ip ospf interface", s => showOspfIfDetail(s), ["router"]);
+show("ip ospf interface <if>", (s, n) => showOspfIfDetail(s, n), ["router"]);
 show("ip ospf", s => showIpProtocols(s), ["router"]);
 show("ip protocols", showIpProtocols);
 show("access-lists", showAcls);
@@ -1079,6 +1124,8 @@ reg("config", "banner motd <rest>", (s, r) => {
 reg("config", "no banner motd", s => { s.dev.banner = null; });
 reg("config", "ip domain-lookup", s => { s.dev.domainLookup = true; });
 reg("config", "no ip domain-lookup", s => { s.dev.domainLookup = false; });
+reg("config", "ip domain lookup", s => { s.dev.domainLookup = true; });        // the spelling newer IOS releases print
+reg("config", "no ip domain lookup", s => { s.dev.domainLookup = false; });
 reg("config", "ip domain-name <word>", (s, w) => { s.dev.domainName = w; });
 reg("config", "ip domain name <word>", (s, w) => { s.dev.domainName = w; });
 reg("config", "no ip domain-name", s => { s.dev.domainName = null; });
@@ -1197,8 +1244,22 @@ reg("router", "no network <ip> <ip> area <num>", (s, ip, wild) => {
   ip = (ip & ~wild) >>> 0;
   p.networks = p.networks.filter(n => !(n.ip === ip && n.wild === wild));
 });
-reg("router", "router-id <ip>", (s, ip) => { proc(s).routerId = ip; });
-reg("router", "no router-id", s => { proc(s).routerId = null; });
+// A new router ID is used at once only while the router has no neighbours;
+// otherwise it waits for "clear ip ospf process", as on IOS.
+const RID_LATER = '% OSPF: Reload or use "clear ip ospf process" command, for this to take effect';
+reg("router", "router-id <ip>", (s, ip) => {
+  const d = s.dev, busy = (s.net.st.nbrs[d.name] || []).length > 0;
+  proc(s).routerId = ip;
+  if (d.ospfRid === ip) return;
+  if (busy) return RID_LATER;
+  d.ospfRid = ip;
+});
+reg("router", "no router-id", s => {
+  const d = s.dev, busy = (s.net.st.nbrs[d.name] || []).length > 0;
+  proc(s).routerId = null;
+  if (busy) return RID_LATER;
+  d.ospfRid = null;
+});
 reg("router", "passive-interface <if>", (s, n) => {
   if (!s.dev.ifaces[n]) return INVALID;
   const p = proc(s);
@@ -1215,7 +1276,14 @@ reg("router", "no passive-interface <if>", (s, n) => {
 reg("router", "default-information originate", s => { proc(s).defaultOriginate = true; proc(s).always = false; });
 reg("router", "default-information originate always", s => { proc(s).defaultOriginate = true; proc(s).always = true; });
 reg("router", "no default-information originate", s => { proc(s).defaultOriginate = false; });
-reg("router", "auto-cost reference-bandwidth <num>", (s, n) => { const p = proc(s); p.misc = p.misc.filter(x => !x.startsWith("auto-cost")); p.misc.push("auto-cost reference-bandwidth " + n); });
+reg("router", "auto-cost reference-bandwidth <num>", (s, n) => {
+  if (n < 1 || n > 4294967) return INVALID;
+  const p = proc(s);
+  p.misc = p.misc.filter(x => !x.startsWith("auto-cost"));
+  if (n !== 100) p.misc.push("auto-cost reference-bandwidth " + n);
+  return "% OSPF: Reference bandwidth is changed.\n        Please ensure reference bandwidth is consistent across all routers.";
+});
+reg("router", "no auto-cost reference-bandwidth", s => { const p = proc(s); p.misc = p.misc.filter(x => !x.startsWith("auto-cost")); });
 reg("router", "log-adjacency-changes", () => {});
 
 // ACLs
@@ -1364,6 +1432,7 @@ reg("if", "no description", s => each(s, i => { i.desc = ""; }));
 reg("if", "ip address <ip> <ip>", (s, ip, mask) => each(s, i => {
   const d = s.dev;
   if (i.sw) return "% IP addresses may not be configured on L2 links.";
+  if (d.kind === "router" && ifKind(i.name) === "sub" && i.dot1q == null) return "% Configuring IP routing on a LAN subinterface is only allowed if that\nsubinterface is already configured as part of an IEEE 802.10, IEEE 802.1Q,\nor ISL vLAN.\nTip: type \"encapsulation dot1q <vlan>\" on the subinterface first, then the address.";
   const len = maskLen(mask);
   if (len === null || len === 0) return `Bad mask 0x${mask.toString(16).toUpperCase()} for address ${intToIp(ip)}`;
   if (len < 31 && (ip === netOf(ip, mask) || ip === bcastOf(ip, mask))) return `Bad mask /${len} for address ${intToIp(ip)}`;
@@ -1381,7 +1450,8 @@ reg("if", "ip address dhcp", () => "% DHCP client on router interfaces is not si
 reg("if", "duplex auto|full|half", (s, v) => each(s, i => { i.misc = i.misc.filter(x => !x.startsWith("duplex")); if (v !== "auto") i.misc.push("duplex " + v); }));
 reg("if", "speed <word>", (s, v) => each(s, i => { i.misc = i.misc.filter(x => !x.startsWith("speed")); if (v !== "auto") i.misc.push("speed " + v); }));
 reg("if", "clock rate <num>", (s, n) => each(s, i => { i.misc = i.misc.filter(x => !x.startsWith("clock rate")); i.misc.push("clock rate " + n); }), ["router"]);
-reg("if", "bandwidth <num>", (s, n) => each(s, i => { i.misc = i.misc.filter(x => !x.startsWith("bandwidth")); i.misc.push("bandwidth " + n); }));
+reg("if", "bandwidth <num>", (s, n) => each(s, i => { if (n < 1) return INVALID; i.misc = i.misc.filter(x => !x.startsWith("bandwidth")); i.misc.push("bandwidth " + n); }));
+reg("if", "no bandwidth", s => each(s, i => { i.misc = i.misc.filter(x => !x.startsWith("bandwidth")); }));
 reg("if", "cdp enable", () => {});
 reg("if", "no cdp enable", () => {});
 
@@ -1397,9 +1467,11 @@ const sw = (s, fn) => each(s, i => {
 });
 reg("if", "switchport", () => {}, swOnly);
 reg("if", "switchport mode access|trunk", (s, m) => sw(s, x => { x.mode = m; }), swOnly);
-reg("if", "switchport mode dynamic auto|desirable", s => sw(s, x => { x.mode = null; }), swOnly);
-reg("if", "no switchport mode", s => sw(s, x => { x.mode = null; }), swOnly);
-reg("if", "switchport nonegotiate", () => {}, swOnly);
+const DTP_CONFLICT = "Command rejected: Conflict between 'nonegotiate' and 'dynamic' status.";
+reg("if", "switchport mode dynamic auto|desirable", (s, m) => sw(s, x => { if (x.nonegotiate) return DTP_CONFLICT; x.mode = null; x.dtp = m; }), swOnly);
+reg("if", "no switchport mode", s => sw(s, x => { if (x.nonegotiate) return DTP_CONFLICT; x.mode = null; x.dtp = "auto"; }), swOnly);
+reg("if", "switchport nonegotiate", s => sw(s, x => { if (!x.mode) return DTP_CONFLICT; x.nonegotiate = true; }), swOnly);
+reg("if", "no switchport nonegotiate", s => sw(s, x => { x.nonegotiate = false; }), swOnly);
 reg("if", "switchport trunk encapsulation dot1q", () => {}, swOnly);
 reg("if", "switchport access vlan <num>", (s, v) => {
   if (v < 1 || v > 4094) return INVALID;
@@ -1427,7 +1499,7 @@ reg("if", "switchport trunk allowed vlan <rest>", (s, r) => {
 }, swOnly);
 reg("if", "no switchport trunk allowed vlan", s => sw(s, x => { x.allowed = null; }), swOnly);
 reg("if", "switchport port-security", s => sw(s, (x, i) => {
-  if (x.mode !== "access") return `Command rejected: ${i.name} is a dynamic port.`;
+  if (!x.mode) return `Command rejected: ${i.name} is a dynamic port.`;        // a static access or static trunk port is accepted
   x.ps.on = true;
 }), swOnly);
 reg("if", "no switchport port-security", s => sw(s, x => { x.ps.on = false; }), swOnly);
@@ -1493,7 +1565,14 @@ reg("if", "ip ospf priority <num>", (s, n) => each(s, i => { i.ospfPri = n; }), 
 reg("if", "no ip ospf priority", s => each(s, i => { i.ospfPri = null; }), rOnly);
 reg("if", "ip ospf hello-interval <num>", (s, n) => each(s, i => { i.ospfHello = n === 10 ? null : n; }), rOnly);
 reg("if", "no ip ospf hello-interval", s => each(s, i => { i.ospfHello = null; }), rOnly);
-reg("if", "ip ospf network point-to-point", () => {}, rOnly);
+reg("if", "ip ospf dead-interval <num>", (s, n) => each(s, i => { i.ospfDead = n; }), rOnly);
+reg("if", "no ip ospf dead-interval", s => each(s, i => { i.ospfDead = null; }), rOnly);
+reg("if", "ip ospf network point-to-point|broadcast", (s, t) => each(s, i => {
+  if (ifKind(i.name) === "loop") return "% OSPF: Network type cannot be changed on a loopback in this lab.";
+  const def = i.name.startsWith("Serial") ? "p2p" : "broadcast", want = t === "broadcast" ? "broadcast" : "p2p";
+  i.ospfNet = want === def ? null : want;
+}), rOnly);
+reg("if", "no ip ospf network", s => each(s, i => { i.ospfNet = null; }), rOnly);
 
 // Run a list of config lines against a device (used to preconfigure levels).
 export function applyConfig(net, devName, lines) {
@@ -1504,7 +1583,7 @@ export function applyConfig(net, devName, lines) {
     if (!line) continue;
     net.touch();
     const out = s.pending ? (() => { const p = s.pending; s.pending = null; return p.fn(line) || ""; })() : s.run(line) || "";
-    if (/% (Invalid|Incomplete|Ambiguous)|overlaps with|rejected|Bad mask|Inconsistent|illegal/.test(out)) errors.push(`${devName}: "${line}" -> ${out.trim()}`);
+    if (/% (Invalid|Incomplete|Ambiguous)|overlaps with|rejected|Bad mask|Inconsistent|illegal|only allowed/.test(out)) errors.push(`${devName}: "${line}" -> ${out.trim()}`);
   }
   net.touch();
   return errors;
