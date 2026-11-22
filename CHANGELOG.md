@@ -4,6 +4,15 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+Follows a second review of the material.
+
+### Fixed
+
+- Questions about Ansible now appear in both exams. Ansible is in both blueprints but sits in a different topic in each, so these questions used to show only in v1.1 (the imported ones) or only in v2.0 (most of the built-in ones). They now follow the exam you study: under "Automation and programmability" in v1.1 and "Network operations and Ansible" in v2.0, without a "v1 exclusive" or "New in v2" badge.
+- `ip ospf priority`, `ip ospf cost`, `ip ospf hello-interval` and `ip ospf dead-interval` reject numbers outside the ranges IOS accepts (priority 0 to 255, the others 1 to 65535).
+- Theory: stateful DHCPv6 is "A off, M on", with the three interface commands that set the flags and what a host does when both are on; the spanning tree tie-breaker list no longer contradicts its own first line, and its last step is the port ID, not only the number; the width of a 2.4 GHz channel is given the same way in the theory and in two questions.
+- A handbook table had two rows on one line of its source.
+
 ## [0.13.0] - 2026-11-22
 
 ### Added

@@ -4,7 +4,7 @@
 import { h, rich, fmtTime } from "./dom.js";
 import { ipToInt, intToIp, lenMask, netOf, bcastOf } from "../engine/ip.js";
 import { QUESTIONS } from "../game/questions.js";
-import { topicOfQuestion, TOPIC_BY_ID, inExam, questionOnly, v1DomainOf } from "../game/topics.js";
+import { topicOfQuestion, TOPIC_BY_ID, inExam, questionOnly, v1DomainOf, topicInExam, inBothExams } from "../game/topics.js";
 import { store } from "./store.js";
 
 const rnd = n => Math.floor(Math.random() * n);
@@ -122,16 +122,22 @@ export function loadBank() {
 // The questions in play: those that belong to the exam version being studied,
 // from the sources the player chose ("all", "book" or "custom"; the choice only
 // matters when a book bank is installed).
+// Every question of one exam version, filed under the topic it has there.
+// `both` marks a question that belongs to both exams although its topic does not.
+const forExam = (bank, exam) => bank.all
+  .map(q => ({ ...q, both: inBothExams(q, q.topic), topic: topicInExam(q, q.topic, exam) }))
+  .filter(q => q.both || inExam(q, q.topic, exam));
+
 export function activeQuestions(bank) {
   const exam = store.exam();
   const want = bank.hasBook ? store.pref("sources", "all") : "all";
-  return bank.all.filter(q => inExam(q, q.topic, exam) && (want === "all" || q.src === want));
+  return forExam(bank, exam).filter(q => want === "all" || q.src === want);
 }
 
 // { topicId: { custom: n, book: n } } for the Topics screen, for the chosen exam
 export function countByTopic(bank) {
   const out = {}, exam = store.exam();
-  for (const q of bank.all) { if (!inExam(q, q.topic, exam)) continue; const c = (out[q.topic] ||= { custom: 0, book: 0 }); c[q.src]++; }
+  for (const q of forExam(bank, exam)) { const c = (out[q.topic] ||= { custom: 0, book: 0 }); c[q.src]++; }
   return out;
 }
 
@@ -244,8 +250,8 @@ export function mountQuiz(root, level, { onDone }) {
       h("div", { class: "q-meta" },
         showSource ? h("span", { class: "src-badge " + q.src, title: SOURCES[q.src].title }, SOURCES[q.src].label) : null,
         t ? h("span", { class: "muted small" }, t.name) : null,
-        questionOnly(q, q.topic) === "v1" ? h("span", { class: "vbadge v1x", title: "In the v1.1 blueprint, not in v2.0" }, "v1 exclusive") : null,
-        questionOnly(q, q.topic) === "v2" ? h("span", { class: "vbadge v2n", title: "New in the v2.0 blueprint" }, "New in v2") : null),
+        !q.both && questionOnly(q, q.topic) === "v1" ? h("span", { class: "vbadge v1x", title: "In the v1.1 blueprint, not in v2.0" }, "v1 exclusive") : null,
+        !q.both && questionOnly(q, q.topic) === "v2" ? h("span", { class: "vbadge v2n", title: "New in the v2.0 blueprint" }, "New in v2") : null),
       h("div", { class: "qhtml", html: q.q }), choose, h("div", { class: "options" + (multi ? " multi" : "") }, opts), explain, h("div", { class: "actions" }, btn)));
     card.scrollIntoView({ block: "nearest" });
   }

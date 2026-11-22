@@ -1583,13 +1583,15 @@ reg("if", "ip ospf <num> area <num>", (s, pid, area) => {
   return each(s, i => { i.ospfArea = { pid, area }; });
 }, rOnly);
 reg("if", "no ip ospf <num> area <num>", s => each(s, i => { i.ospfArea = null; }), rOnly);
-reg("if", "ip ospf cost <num>", (s, n) => each(s, i => { i.ospfCost = n; }), rOnly);
+// the ranges IOS accepts: cost and timers 1-65535, priority 0-255
+const inRange = (n, lo, hi) => Number.isInteger(n) && n >= lo && n <= hi;
+reg("if", "ip ospf cost <num>", (s, n) => (inRange(n, 1, 65535) ? each(s, i => { i.ospfCost = n; }) : INVALID), rOnly);
 reg("if", "no ip ospf cost", s => each(s, i => { i.ospfCost = null; }), rOnly);
-reg("if", "ip ospf priority <num>", (s, n) => each(s, i => { i.ospfPri = n; }), rOnly);
+reg("if", "ip ospf priority <num>", (s, n) => (inRange(n, 0, 255) ? each(s, i => { i.ospfPri = n; }) : INVALID), rOnly);
 reg("if", "no ip ospf priority", s => each(s, i => { i.ospfPri = null; }), rOnly);
-reg("if", "ip ospf hello-interval <num>", (s, n) => each(s, i => { i.ospfHello = n === 10 ? null : n; }), rOnly);
+reg("if", "ip ospf hello-interval <num>", (s, n) => (inRange(n, 1, 65535) ? each(s, i => { i.ospfHello = n === 10 ? null : n; }) : INVALID), rOnly);
 reg("if", "no ip ospf hello-interval", s => each(s, i => { i.ospfHello = null; }), rOnly);
-reg("if", "ip ospf dead-interval <num>", (s, n) => each(s, i => { i.ospfDead = n; }), rOnly);
+reg("if", "ip ospf dead-interval <num>", (s, n) => (inRange(n, 1, 65535) ? each(s, i => { i.ospfDead = n; }) : INVALID), rOnly);
 reg("if", "no ip ospf dead-interval", s => each(s, i => { i.ospfDead = null; }), rOnly);
 reg("if", "ip ospf network point-to-point|broadcast", (s, t) => each(s, i => {
   if (ifKind(i.name) === "loop") return "% OSPF: Network type cannot be changed on a loopback in this lab.";

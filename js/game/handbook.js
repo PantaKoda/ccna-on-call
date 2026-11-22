@@ -65,7 +65,8 @@ const SECTIONS = [
     ["ip route 0.0.0.0 0.0.0.0 203.0.113.1", "config", "Default route"],
     ["ip route 10.2.0.0 255.255.255.0 10.0.13.2 200", "config", "Floating static: only used when better routes are gone"],
     ["show ip route", ">", "The routing table: C connected, S static, O OSPF, * default"],
-    ["show ip route ospf", ">", "Only the routes from one source (also static, connected)"],    ["traceroute 10.2.0.10", ">", "The routers on the way to a destination"],
+    ["show ip route ospf", ">", "Only the routes from one source (also static, connected)"],
+    ["traceroute 10.2.0.10", ">", "The routers on the way to a destination"],
   ]],
   ["OSPF", ["Command", "Where", "What it does"], [
     ["router ospf 1", "config", "Start OSPF process 1 (the number is local to the router)"],

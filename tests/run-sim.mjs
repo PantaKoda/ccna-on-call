@@ -69,6 +69,13 @@ const ospfLab = () => new Lab({
   run(lab, "R1", cfg("interface g0/1", "ip ospf cost 7"));
   ok("ip ospf cost wins", st().oifs.R1.find(o => o.name === "GigabitEthernet0/1").cost === 7);
 
+  // number ranges
+  const bad = c => /Invalid input/.test(run(lab, "R1", cfg("interface g0/1", c)));
+  ok("priority above 255 is refused", bad("ip ospf priority 256") && !bad("ip ospf priority 255"));
+  ok("cost 0 and cost 65536 are refused", bad("ip ospf cost 0") && bad("ip ospf cost 65536"));
+  ok("hello and dead intervals of 0 are refused", bad("ip ospf hello-interval 0") && bad("ip ospf dead-interval 0"));
+  run(lab, "R1", cfg("interface g0/1", "no ip ospf priority", "ip ospf cost 7"));
+
   // timers
   run(lab, "R1", cfg("interface g0/1", "ip ospf dead-interval 30"));
   ok("dead interval mismatch drops the neighbour", !st().nbrs.R1.some(n => n.dev === "R4"));

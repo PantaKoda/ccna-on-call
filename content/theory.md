@@ -508,7 +508,9 @@ The **router advertisement** tells hosts which method to use, with three flags:
 | --- | --- | --- | --- |
 | A on, O off, M off | SLAAC | The host builds it | Nowhere (or the RA itself) |
 | A on, O on | Stateless DHCPv6 | The host builds it | A DHCPv6 server |
-| M on | Stateful DHCPv6 | A DHCPv6 server | A DHCPv6 server |
+| A off, M on | Stateful DHCPv6 | A DHCPv6 server | A DHCPv6 server |
+
+The flags are set on the router's interface: `ipv6 nd other-config-flag` turns O on, `ipv6 nd managed-config-flag` turns M on, and `ipv6 nd prefix <prefix> no-autoconfig` turns A off for that prefix. If M is on and A is left on, a host does both: it builds a SLAAC address *and* takes one from the DHCPv6 server.
 
 - DHCPv6 never hands out a default gateway. In all three cases the host takes the **router's link-local address** from the RA as its gateway.
 - Before using any address, a host checks that nobody else has it: **duplicate address detection** (DAD) sends a neighbour solicitation for its own address and expects silence.
@@ -629,7 +631,7 @@ To reach anything, a host needs an **IP address**, a **subnet mask**, a **defaul
 | 5 GHz | Around two dozen | Shorter range, much less interference, faster |
 | 6 GHz | Many more | Shortest range, newest clients only |
 
-In 2.4 GHz each channel is about 22 MHz wide but channels are only 5 MHz apart, which is why only 1, 6 and 11 avoid each other. Neighbouring access points should use different non-overlapping channels.
+In 2.4 GHz each channel is 20 to 22 MHz wide (22 for the oldest standard, 20 for the ones in use today) but channels are only 5 MHz apart, which is why only 1, 6 and 11 avoid each other. Neighbouring access points should use different non-overlapping channels.
 
 ## What happens to a radio signal
 
@@ -689,12 +691,12 @@ Redundant links between switches create loops, and Ethernet frames have no hop l
 
 Path cost by speed: 10 Mb/s is 100, 100 Mb/s is 19, 1 Gb/s is 4, 10 Gb/s is 2.
 
-When two paths cost the same, the switch breaks the tie in this order, taking the lowest value each time:
+To pick its root port, a switch compares these in order and takes the lowest value. It only moves to the next line when the one before is a tie:
 
 1. Root path cost.
 2. The bridge ID of the neighbour that sent the BPDU.
 3. The neighbour's port priority and number.
-4. Its own port number.
+4. Its own port ID (port priority, then port number).
 
 | Rapid PVST+ state | Forwards frames | Learns MAC addresses |
 | --- | --- | --- |
@@ -1120,7 +1122,7 @@ router ospf 1
 Two routers on a link become neighbours only if all of these match:
 
 1. Same subnet and mask.
-2. Same **area**.
+2. Same **area**. (Where stub areas are used, both must also agree that the area is a stub. That is beyond the single-area designs of the CCNA.)
 3. Same **hello and dead timers** (10 and 40 seconds by default on Ethernet). Changing the hello interval moves the dead interval to four times the new value, unless you set `ip ospf dead-interval` yourself.
 4. **Different** router IDs.
 5. Neither interface is passive.

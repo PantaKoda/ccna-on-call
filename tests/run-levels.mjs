@@ -161,10 +161,12 @@ if (!only) {
     if (new Set(q.o).size !== q.o.length) problems.push(`${q.id}: duplicate options`);
   }
   // each promotion exam must be fillable from the built-in bank, in both exam versions
-  const { topicOfQuestion, TOPIC_BY_ID, inExam, EXAMS, topicsByDomain } = await import("../js/game/topics.js");
+  const { topicOfQuestion, TOPIC_BY_ID, inExam, EXAMS, topicsByDomain, topicInExam, inBothExams } = await import("../js/game/topics.js");
   const tagged = QUESTIONS.map(q => ({ ...q, topic: topicOfQuestion(q) }));
   for (const exam of Object.keys(EXAMS)) {
-    const pool = tagged.filter(q => inExam(q, q.topic, exam));
+    // as the quiz does it: a question on a subject both exams share is filed under that exam's topic
+    const pool = tagged.map(q => ({ ...q, both: inBothExams(q, q.topic), topic: topicInExam(q, q.topic, exam) })).filter(q => q.both || inExam(q, q.topic, exam));
+    if (!pool.some(q => q.both && /ansible/i.test(q.q))) problems.push(`${exam}: no Ansible question is visible`);
     for (const level of LEVELS.filter(l => l.type === "quiz")) {
       const want = exam === "v2" ? level.params.v2domains : level.params.domains;
       if (!Array.isArray(want)) { problems.push(`${level.id}: no domain list for ${exam}`); continue; }

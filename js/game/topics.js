@@ -149,6 +149,23 @@ export function v1DomainOf(q, topicId) {
   return q.ch >= 1 && q.ch <= 6 ? q.ch : TOPIC_BY_ID.get(topicId).v1;
 }
 
+// Ansible is examined by both blueprints, but it lives in a different topic in
+// each: "Automation and programmability" in v1.1 and "Network operations" in
+// v2.0. A question about it follows the exam being studied instead of vanishing
+// from the other one. It counts as "about Ansible" when its wording or its
+// correct answer says so; a wrong answer that merely names Ansible does not.
+const SHARED = { topics: ["automation", "netops"], match: /\bansible\b|\bplaybooks?\b|infrastructure as code|\biac\b/i };
+export function inBothExams(q, topicId) {
+  if (q.only || !SHARED.topics.includes(topicId)) return false;
+  const right = (Array.isArray(q.a) ? q.a : [q.a]).map(k => strip(q.o[k] ?? "")).join(" ");
+  return SHARED.match.test(strip(q.q) + " " + right);
+}
+// The topic a question is shown under in one exam version.
+export function topicInExam(q, topicId, version) {
+  if (TOPIC_BY_ID.get(topicId)[version] !== null || !inBothExams(q, topicId)) return topicId;
+  return SHARED.topics.find(id => id !== topicId);
+}
+
 // Is this question part of the given exam version? A question can be limited
 // by its own `only` tag or by belonging to a topic the exam does not include.
 export function questionOnly(q, topicId) {
