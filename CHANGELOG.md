@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-22
+
 This release follows a review of all the learning material for accuracy. Most of its points were right and are fixed here; a few were not and are left as they were.
 
 ### Added
