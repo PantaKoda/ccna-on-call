@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-22
+
 ### Added
 
 - A cockpit view: press Cockpit in the top bar and the game's screens turn into glass panels in a spaceship orbiting a ringed planet, with the stars and the planet turning slowly behind them. Press Classic to go back. Your progress is the same in both views.
