@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-22
+
 ### Added
 
 - Four new drills. Like Subnet Sprint, each one builds new questions every time, marks them at once and explains the answer.
