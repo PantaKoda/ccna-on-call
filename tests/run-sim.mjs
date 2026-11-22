@@ -188,5 +188,68 @@ const ospfLab = () => new Lab({
   ok("show ip interface names the list and its direction", /Inbound  access list is BACK-IN/.test(sii) && /Outgoing access list is not set/.test(sii), sii);
   ok("established is refused on a UDP line", /Invalid/.test(run(lab, "R1", cfg("ip access-list extended BACK-IN", "permit udp any any established"))));
 }
+// ---- layer 3 switching: ip routing, SVIs, routed ports, routes and OSPF on a switch
+{
+  const lab = new Lab({
+    id: "t6", topology: {
+      devices: [
+        { name: "DSW", kind: "switch", config: ["vlan 10", "vlan 20", "interface fa0/1", "switchport mode access", "switchport access vlan 10", "interface fa0/2", "switchport mode access", "switchport access vlan 20",
+          "interface vlan 10", "ip address 192.168.10.1 255.255.255.0", "interface vlan 20", "ip address 192.168.20.1 255.255.255.0"] },
+        { name: "R1", kind: "router", config: ["interface g0/0", "ip address 10.255.0.1 255.255.255.252", "no shutdown", "interface loopback0", "ip address 10.9.9.9 255.255.255.255", "exit", "ip route 192.168.0.0 255.255.0.0 10.255.0.2"] },
+        { name: "PA", kind: "pc", ip: { mode: "static", ip: "192.168.10.10", mask: "255.255.255.0", gw: "192.168.10.1" } },
+        { name: "PB", kind: "pc", ip: { mode: "static", ip: "192.168.20.10", mask: "255.255.255.0", gw: "192.168.20.1" } },
+        { name: "PC", kind: "pc", ip: { mode: "static", ip: "192.168.30.10", mask: "255.255.255.0", gw: "192.168.30.1" } },
+      ],
+      links: ["DSW:fa0/1 PA", "DSW:fa0/2 PB", "DSW:fa0/3 PC", "DSW:g0/1 R1:g0/0"],
+    }, objectives: [],
+  });
+  const st = () => lab.net.st, A = 0xc0a80a0a, B = 0xc0a8140a, GW = 0xc0a80a01, FAR = 0x0a090909;
+  ok("a host reaches its SVI gateway on a layer 2 switch", st().reach("PA", GW).ok);
+  ok("but the switch does not route between VLANs yet", !st().reach("PA", B).ok);
+  ok("router ospf is refused without ip routing", /IP routing not enabled/.test(run(lab, "DSW", cfg("router ospf 1"))));
+  run(lab, "DSW", cfg("ip routing"));
+  ok("ip routing lets the SVIs route between VLANs", st().reach("PA", B).ok && st().reach("PB", A).ok);
+  ok("show ip route on the switch is now a routing table", /C\s+192\.168\.10\.0\/24 is directly connected, Vlan10/.test(run(lab, "DSW", ["show ip route"])));
+  ok("a layer 2 port refuses an address", /L2 links/.test(run(lab, "DSW", cfg("interface g0/1", "ip address 10.255.0.2 255.255.255.252"))));
+  ok("and refuses OSPF interface commands", /layer 2 port/.test(run(lab, "DSW", cfg("interface g0/1", "ip ospf cost 5"))));
+  run(lab, "DSW", cfg("interface g0/1", "no switchport", "ip address 10.255.0.2 255.255.255.252"));
+  ok("no switchport makes a routed port that takes the address", lab.net.devs.DSW.ifaces["GigabitEthernet0/1"].sw === null && st().reach("DSW", 0x0aff0001).ok);
+  // every show command must cope with a port that has no layer 2 settings
+  const shows = ["show vlan brief", "show interfaces status", "show interfaces trunk", "show interfaces switchport", "show interfaces g0/1 switchport", "show spanning-tree", "show spanning-tree summary",
+    "show mac address-table", "show etherchannel summary", "show port-security", "show running-config", "show ip interface brief", "show ip interface", "show cdp neighbors", "show interfaces"];
+  const outs = Object.fromEntries(shows.map(c => [c, run(lab, "DSW", [c])]));
+  ok("the routed port shows as routed, and as Switchport: Disabled", /Gi0\/1\s+connected\s+routed/.test(outs["show interfaces status"]) && /Switchport: Disabled/.test(outs["show interfaces g0/1 switchport"]), outs["show interfaces status"]);
+  ok("running-config lists ip routing and no switchport", /^ip routing$/m.test(outs["show running-config"]) && / no switchport\n ip address 10\.255\.0\.2/.test(outs["show running-config"]));
+  ok("the routed port is not in any VLAN", !/Gi0\/1/.test(outs["show vlan brief"]));
+  ok("without a route the far network is unreachable", !st().reach("PA", FAR).ok);
+  run(lab, "DSW", cfg("ip default-gateway 10.255.0.1"));
+  ok("ip default-gateway is ignored once the switch routes", !st().reach("PA", FAR).ok);
+  run(lab, "DSW", cfg("ip route 0.0.0.0 0.0.0.0 10.255.0.1"));
+  ok("a default route on the switch gets the hosts out", st().reach("PA", FAR).ok && st().reach("PB", FAR).ok);
+  const tr = run(lab, "PA", ["tracert 10.9.9.9"]);
+  const hopLines = tr.split("\n").filter(l => l.includes(" ms "));
+  ok("tracert counts the routing switch as a hop", hopLines.length === 2 && hopLines[0].endsWith("192.168.10.1") && hopLines[1].endsWith("10.9.9.9"), tr);
+
+  // an SVI is up only when its VLAN exists and a port in it is up
+  const svi = () => st().status("DSW", "Vlan30").up;
+  run(lab, "DSW", cfg("interface vlan 30", "ip address 192.168.30.1 255.255.255.0"));
+  ok("an SVI for a VLAN that does not exist stays down", !svi());
+  run(lab, "DSW", cfg("vlan 30"));
+  ok("and stays down while no port carries the VLAN", !svi());
+  run(lab, "DSW", cfg("interface fa0/3", "switchport mode access", "switchport access vlan 30"));
+  ok("it comes up with the first active port in the VLAN", svi() && st().reach("PC", A).ok);
+
+  // OSPF between the layer 3 switch and the router
+  run(lab, "DSW", cfg("no ip route 0.0.0.0 0.0.0.0", "router ospf 1", "router-id 2.2.2.2", "network 10.255.0.0 0.0.0.3 area 0", "network 192.168.0.0 0.0.255.255 area 0", "passive-interface vlan 10"));
+  run(lab, "R1", cfg("no ip route 192.168.0.0 255.255.0.0", "router ospf 1", "router-id 1.1.1.1", "network 10.255.0.0 0.0.0.3 area 0", "network 10.9.9.9 0.0.0.0 area 0"));
+  ok("the switch and the router become OSPF neighbours", st().nbrs.DSW.some(n => n.dev === "R1" && n.state === "FULL"), run(lab, "DSW", ["show ip ospf neighbor"]));
+  ok("each learns the other's networks", st().rt.DSW.some(r => r.proto === "O" && r.net === FAR) && st().rt.R1.some(r => r.proto === "O" && r.net === 0xc0a81400) && st().reach("PB", FAR).ok);
+  ok("an SVI can be passive", st().oifs.DSW.find(o => o.name === "Vlan10").passive);
+
+  run(lab, "DSW", cfg("interface g0/1", "switchport"));
+  ok("switchport turns the port back and removes its address", lab.net.devs.DSW.ifaces["GigabitEthernet0/1"].sw !== null && lab.net.devs.DSW.ifaces["GigabitEthernet0/1"].ip === null);
+  run(lab, "DSW", cfg("no ip routing"));
+  ok("no ip routing stops the routing again", !st().reach("PA", B).ok);
+}
 console.log(fails ? `\n${fails} FAILED` : "\nall simulator checks pass");
 process.exit(fails ? 1 : 0);

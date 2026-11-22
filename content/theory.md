@@ -944,7 +944,46 @@ The number after the dot (`.10`) is only a label. The VLAN is chosen by the `enc
 
 ## The other way: a layer 3 switch
 
-A multilayer switch can route between VLANs itself with one SVI per VLAN (`interface vlan 10` with an IP address) and `ip routing`. It is faster and is what larger networks use; router on a stick is the low-cost option for small sites.
+A multilayer (layer 3) switch can route between VLANs itself. Nothing leaves the switch and comes back over the same cable, so it is faster, and it is what larger networks use. Router on a stick is the low-cost option for small sites.
+
+```
+ip routing
+interface vlan 10
+ ip address 192.168.10.1 255.255.255.0
+interface vlan 20
+ ip address 192.168.20.1 255.255.255.0
+interface g0/2
+ no switchport
+ ip address 10.255.0.2 255.255.255.252
+ip route 0.0.0.0 0.0.0.0 10.255.0.1
+```
+
+Three pieces make it work:
+
+- **`ip routing`** switches routing on. Without it the switch is a layer 2 device that happens to have addresses: hosts can ping their SVI, but nothing is forwarded between VLANs.
+- A **switch virtual interface** (SVI), `interface vlan 10`, is the gateway of one VLAN. Hosts in that VLAN use its address as their default gateway.
+- A **routed port**, made with `no switchport`, stops being a switch port: it belongs to no VLAN, takes no part in spanning tree and takes an IP address like a router interface. It is the usual way to connect the switch to a router. Typing `switchport` turns it back and removes the address.
+
+`ip default-gateway` and `ip routing` are for two different kinds of switch. A layer 2 switch uses `ip default-gateway` to reach its own managers from another subnet. Once `ip routing` is on, the switch uses its routing table and **ignores** `ip default-gateway`, so it needs a default *route* instead.
+
+## Why an SVI stays down
+
+An SVI is up/up only when all three are true:
+
+1. It is not shut down.
+2. Its VLAN **exists** on the switch. `interface vlan 30` creates the interface, not the VLAN: check `show vlan brief`.
+3. At least one port that carries the VLAN is **up**: an access port in it, or a trunk that allows it (`show interfaces trunk`).
+
+`show ip interface brief` shows the result: `administratively down` is the first cause, `down/down` is the second or the third. A classic case: the SVI for a new VLAN is configured on the distribution switch, but every host of that VLAN sits on an access switch and the trunk between them does not allow it yet.
+
+## The same checks on a layer 3 switch
+
+| Command | Use it to see |
+| --- | --- |
+| `show ip route` | The routing table. On a switch that is not routing it prints only the default gateway |
+| `show ip interface brief` | Every SVI and routed port, with its address and state |
+| `show interfaces status` | `routed` in the VLAN column marks a routed port |
+| `show interfaces g0/2 switchport` | `Switchport: Disabled` on a routed port |
 
 ## Check your work
 

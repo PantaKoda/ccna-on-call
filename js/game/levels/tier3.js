@@ -1,5 +1,5 @@
 import { C } from "../checks.js";
-import { floatingLab, ospfTuneLab } from "../practice.js";
+import { floatingLab, ospfTuneLab, l3SwitchLab } from "../practice.js";
 
 const M24 = "255.255.255.0";
 const pc = (name, x, y, ip, gw) => ({ name, kind: "pc", x, y, ip: { mode: "static", ip, mask: M24, gw } });
@@ -101,6 +101,15 @@ export default [
       { on: "HQ-R1", cmds: ["enable", "configure terminal", "ip route 0.0.0.0 0.0.0.0 203.0.113.1", "ip route 192.168.50.0 255.255.255.0 10.0.0.2", "end", "write memory"] },
     ],
     debrief: "`show ip route` marks the default as `S*` and prints \"Gateway of last resort\". Routers always prefer the longest matching prefix, so the /24 to the branch beats the /0 default.",
+  },
+
+  {
+    id: "l3-switch", tier: 3, type: "lab", xp: 280, par: 780,
+    title: "Retire the Stick",
+    from: "Dana Okafor, NOC Team Lead",
+    skills: ["ip routing", "interface vlan (SVI)", "no switchport", "default route on a switch", "show ip interface brief", "why an SVI stays down"],
+    ...l3SwitchLab({ site: "Riverside", vlans: [[10, "STAFF"], [20, "ENG"], [30, "PRINT"]], up: 0, servers: 0, form: "build", trap: "no-vlan" }),
+    debrief: "A layer 3 switch routes between VLANs inside itself, so nothing crosses a cable twice. Three things to remember: it does not route until `ip routing` is typed; an SVI is only up when its VLAN exists and some active port carries it, which is why Vlan30 stayed down until VLAN 30 was created; and a port only takes an IP address after `no switchport`.",
   },
 
   {

@@ -32,6 +32,14 @@ export function ifKind(name) {
 
 export const isHost = d => d.kind === "pc" || d.kind === "server";
 export const isIos = d => d.kind === "router" || d.kind === "switch";
+// Does this device forward packets between its own interfaces? A router always
+// does; a switch only once "ip routing" is on (a layer 3 switch).
+export const isRouting = d => d.kind === "router" || (d.kind === "switch" && !!d.ipRouting);
+// The layer 2 settings of a switch port. A port without them is a routed port.
+export const newSwitchport = () => ({
+  mode: null, dtp: "auto", nonegotiate: false, accessVlan: 1, allowed: null, native: 1, portfast: false, bpduguard: false, guard: null, stpCost: null,
+  ps: { on: false, max: 1, violation: "shutdown", sticky: false },
+});
 
 export function fakeMac(name, idx = 0) {
   let h = 2166136261;
@@ -51,10 +59,7 @@ function newIface(d, name) {
   };
   // switch ports and port-channels carry layer 2 settings
   if (d.kind === "switch" && (kind === "phys" || kind === "po")) {
-    i.sw = {
-      mode: null, dtp: "auto", nonegotiate: false, accessVlan: 1, allowed: null, native: 1, portfast: false, bpduguard: false, guard: null, stpCost: null,
-      ps: { on: false, max: 1, violation: "shutdown", sticky: false },
-    };
+    i.sw = newSwitchport();
   }
   return i;
 }
@@ -117,7 +122,7 @@ export function makeDevice(spec) {
   Object.assign(d, {
     vlans: d.kind === "switch" ? { 1: { name: "default" } } : null,
     stp: d.kind === "switch" ? { mode: "pvst", prio: {} } : null,       // prio[vlan] = configured bridge priority
-    routes: [], ospf: {}, ospfRid: null, acls: {}, natRules: [], natLog: [],
+    routes: [], ospf: {}, ospfRid: null, ipRouting: false, acls: {}, natRules: [], natLog: [],
     dhcp: { excluded: [], pools: {} }, defaultGw: null,
     enableSecret: null, enablePassword: null, pwEncrypt: false, banner: null,
     domainLookup: true, domainName: null, users: {}, rsa: null, sshVersion: null,
@@ -137,7 +142,7 @@ export function makeDevice(spec) {
 
 // Default interface bandwidth in kb/s, as IOS reports it. OSPF derives its cost from this.
 export function defaultBandwidth(name) {
-  return name.startsWith("Gig") ? 1000000 : name.startsWith("Fast") ? 100000 : name.startsWith("Serial") ? 1544 : name.startsWith("Loop") ? 8000000 : 10000;
+  return name.startsWith("Gig") || name.startsWith("Vlan") ? 1000000 : name.startsWith("Fast") ? 100000 : name.startsWith("Serial") ? 1544 : name.startsWith("Loop") ? 8000000 : 10000;
 }
 
 // ---------- ACL evaluation ----------
@@ -281,7 +286,7 @@ function compute(net) {
       const d = devs[dn], o = devs[on];
       if (d.kind !== "switch" || o.kind !== "switch") continue;
       const i = d.ifaces[ifn], p = o.ifaces[oifn];
-      if (!i.sw.bpduguard || i.shutdown || i.errdisabled || p.shutdown || p.errdisabled) continue;
+      if (!i.sw || !p.sw || !i.sw.bpduguard || i.shutdown || i.errdisabled || p.shutdown || p.errdisabled) continue;
       i.errdisabled = "bpduguard";
       net.logs[dn].push(`%SPANTREE-2-BLOCK_BPDUGUARD: Received BPDU on port ${shortIf(ifn)} with BPDU Guard enabled. Disabling port.`,
         `%PM-4-ERR_DISABLE: bpduguard error detected on ${shortIf(ifn)}, putting ${shortIf(ifn)} in err-disable state`);
@@ -367,6 +372,7 @@ function compute(net) {
       return m;
     }
     const lp = logical(dn, ifn), sw = d.ifaces[lp].sw;
+    if (!sw) { m.set("u", `${dn}|${ifn}`); return m; }        // a routed port ("no switchport") is a layer 3 end point, like a router interface
     if (trunking(dn, lp)) {
       for (const v of Object.keys(d.vlans).map(Number)) {
         if (sw.allowed && !sw.allowed.includes(v)) continue;
@@ -545,7 +551,7 @@ function compute(net) {
 
   // ----- routing tables: connected + static -----
   const rt = {}, waiting = {};
-  const routers = net.order.filter(dn => devs[dn].kind === "router");
+  const routers = net.order.filter(dn => isRouting(devs[dn]));       // routers, and switches with "ip routing"
   // A static route is installed once its next hop can be resolved: through a
   // connected subnet, or through another route that is already in the table.
   // As on IOS, the default route alone does not count. `fnh` is the neighbour
@@ -747,7 +753,7 @@ function compute(net) {
       // a gateway outside the host's own subnet cannot be reached, as on a real PC
       return c.gw != null && ((c.gw ^ c.ip) & c.mask) === 0 ? { iface: "eth0", nh: c.gw } : null;
     }
-    if (d.kind === "switch") {
+    if (!isRouting(d)) {                                              // a layer 2 switch: its own subnets, then the default gateway
       for (const i of l3[dn]) if (((ip ^ i.ip) & i.mask) === 0) return { iface: i.name, nh: ip };
       if (d.defaultGw != null) for (const i of l3[dn]) if (((d.defaultGw ^ i.ip) & i.mask) === 0) return { iface: i.name, nh: d.defaultGw };
       return null;
@@ -792,7 +798,7 @@ function compute(net) {
     const fail = (reason, extra) => ({ ok: false, reason, at: cur, hops, pkt, ...extra });
     while (ttl-- > 0) {
       const d = devs[cur];
-      const router = d.kind === "router";
+      const router = isRouting(d);
       if (inIf && router) {
         const i = d.ifaces[inIf];
         if (i.aclIn && !aclPermit(d, i.aclIn, pkt, ctx.user)) return fail("acl", { acl: i.aclIn, iface: inIf });

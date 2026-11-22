@@ -724,6 +724,23 @@ const BY_TOPIC = [
   ["netops", 6, "Which two statements about Ansible are true?",
     ["It needs no agent on the devices it manages", "Its playbooks are written in YAML", "Managed devices pull their configuration from a server on a schedule", "It needs an agent installed on every device", "Its playbooks are written in XML"], [0, 1],
     "Ansible pushes changes from a control node over SSH, with nothing installed on the device, and describes the work in YAML playbooks."],
+
+  // ---- layer 3 switching
+  ["intervlan", 2, "A multilayer switch has an SVI with an address for VLAN 10 and for VLAN 20. Hosts can ping their own gateway but not hosts in the other VLAN. What is missing?",
+    ["A trunk to a router", "<code>ip routing</code> in global configuration", "<code>ip default-gateway</code>", "A subinterface for each VLAN"], 1,
+    "Until <code>ip routing</code> is entered the switch has addresses but forwards nothing between them. The SVIs answer pings because they belong to the switch itself."],
+  ["intervlan", 2, "<code>interface vlan 30</code> has an address and is not shut down, yet <code>show ip interface brief</code> lists it as down/down. Which is a likely cause?",
+    ["VLAN 30 has not been created on the switch", "The SVI needs <code>no switchport</code>", "IP routing is off", "The address is in the wrong subnet"], 0,
+    "Creating the SVI does not create the VLAN. An SVI comes up only when its VLAN exists and at least one port carrying that VLAN is up."],
+  ["intervlan", 2, "What does <code>no switchport</code> do to a port of a multilayer switch?",
+    ["It shuts the port down", "It makes the port a routed port that takes an IP address and belongs to no VLAN", "It makes the port a trunk", "It removes the port from spanning tree but keeps it in its VLAN"], 1,
+    "A routed port behaves like a router interface. It is the usual link from a layer 3 switch to a router or to another layer 3 switch."],
+  ["intervlan", 2, "A switch has <code>ip routing</code> enabled and also <code>ip default-gateway 10.0.0.1</code>, but no default route. What does it do with a packet for an unknown network?",
+    ["It sends it to 10.0.0.1", "It drops it: with routing on, the routing table decides and the default gateway setting is ignored", "It floods it in VLAN 1", "It sends it out of every routed port"], 1,
+    "<code>ip default-gateway</code> is only used while the switch is not routing. A routing switch needs <code>ip route 0.0.0.0 0.0.0.0 ...</code>."],
+  ["intervlan", 2, "Which two conditions must both hold before an SVI shows up/up?",
+    ["Its VLAN exists in the VLAN database", "At least one port carrying that VLAN is up", "A router is connected to the switch", "The VLAN is the native VLAN of a trunk", "Port security is disabled"], [0, 1],
+    "Besides not being shut down, an SVI needs its VLAN to exist and to be active on at least one port: an access port in the VLAN, or a trunk that allows it."],
 ];
 
 // Built-in questions on subjects that are in the v1.1 blueprint but not in v2.0.

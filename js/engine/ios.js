@@ -2,7 +2,7 @@
 // abbreviation, "?" help, tab completion, show commands, running-config.
 
 import { ipToInt, intToIp, maskLen, lenMask, netOf, bcastOf } from "./ip.js";
-import { normIf, shortIf, ifKind, ensureIface, removeIface, fakeMac, defaultBandwidth, isHost } from "./network.js";
+import { normIf, shortIf, ifKind, ensureIface, removeIface, fakeMac, defaultBandwidth, isHost, isRouting, newSwitchport } from "./network.js";
 
 // ---------------------------------------------------------------- registry
 const CMDS = {};
@@ -242,6 +242,7 @@ export function runningConfig(d) {
   }
   if (d.dhcp.excluded.length || Object.keys(d.dhcp.pools).length) add("!");
   if (!d.domainLookup) add("no ip domain-lookup");
+  if (d.kind === "switch" && d.ipRouting) add("ip routing");
   if (d.domainName) add(`ip domain-name ${d.domainName}`);
   if (d.sshVersion) add(`ip ssh version ${d.sshVersion}`);
   for (const [u, x] of Object.entries(d.users)) add(`username ${u}${x.priv != null ? ` privilege ${x.priv}` : ""} ${x.kind === "secret" ? `secret 5 ${fakeHash(x.pw)}` : `password ${pw(x.pw)}`}`);
@@ -256,6 +257,8 @@ export function runningConfig(d) {
     add(`interface ${n}`);
     if (i.desc) add(` description ${i.desc}`);
     if (i.dot1q != null) add(` encapsulation dot1Q ${i.dot1q}${i.dot1qNative ? " native" : ""}`);
+    const routed = d.kind === "switch" && !i.sw && ifKind(n) === "phys";
+    if (routed) add(" no switchport");
     if (i.sw) {
       const s = i.sw;
       if (s.accessVlan !== 1) add(` switchport access vlan ${s.accessVlan}`);
@@ -273,7 +276,7 @@ export function runningConfig(d) {
       if (s.stpCost != null) add(` spanning-tree cost ${s.stpCost}`);
       if (s.bpduguard) add(" spanning-tree bpduguard enable");
     } else if (i.ip != null) add(` ip address ${intToIp(i.ip)} ${intToIp(i.mask)}`);
-    else if (d.kind === "router" || ifKind(n) === "vlan") add(" no ip address");
+    else if (d.kind === "router" || ifKind(n) === "vlan" || routed) add(" no ip address");
     for (const h of i.helpers) add(` ip helper-address ${intToIp(h)}`);
     if (i.aclIn) add(` ip access-group ${i.aclIn} in`);
     if (i.aclOut) add(` ip access-group ${i.aclOut} out`);
@@ -409,19 +412,21 @@ function showIntStatus(s) {
   const out = ["Port      Name               Status       Vlan       Duplex  Speed Type"];
   for (const n of d.ifOrder) {
     const i = d.ifaces[n];
-    if (!i.sw) continue;
+    const routedPort = !i.sw && ifKind(n) === "phys";
+    if (!i.sw && !routedPort) continue;
     const st = s.net.st.status(d.name, n);
     const po = ifKind(n) === "po";
     // a port-channel runs at the speed of its member ports and has no media type of its own
     const gig = po ? d.ifOrder.some(m => m.startsWith("Gig") && (s.net.st.bundle[d.name + "|" + m] || {}).po === n) : n.startsWith("Gig");
-    out.push(`${pad(shortIf(n), 9)} ${pad(i.desc.slice(0, 18), 18)} ${pad(!st.admin ? "disabled" : i.errdisabled ? "err-disabled" : st.up ? "connected" : (s.net.st.bundle[d.name + "|" + n] || {}).state === "s" ? "suspended" : "notconnect", 12)} ${pad(st.up && s.net.st.trunking(d.name, n) ? "trunk" : i.sw.accessVlan, 10)} ${pad(st.up ? "a-full" : "auto", 7)} ${pad(st.up ? (gig ? "a-1000" : "a-100") : "auto", 6)} ${po ? "" : gig ? "10/100/1000BaseTX" : "10/100BaseTX"}`.trimEnd());
+    out.push(`${pad(shortIf(n), 9)} ${pad(i.desc.slice(0, 18), 18)} ${pad(!st.admin ? "disabled" : i.errdisabled ? "err-disabled" : st.up ? "connected" : (s.net.st.bundle[d.name + "|" + n] || {}).state === "s" ? "suspended" : "notconnect", 12)} ${pad(routedPort ? "routed" : st.up && s.net.st.trunking(d.name, n) ? "trunk" : i.sw.accessVlan, 10)} ${pad(st.up ? "a-full" : "auto", 7)} ${pad(st.up ? (gig ? "a-1000" : "a-100") : "auto", 6)} ${po ? "" : gig ? "10/100/1000BaseTX" : "10/100BaseTX"}`.trimEnd());
   }
   return out.join("\n");
 }
 
 function showSwitchport(s, n) {
   const d = s.dev, i = d.ifaces[n];
-  if (!i || !i.sw) return INVALID;
+  if (!i || (!i.sw && ifKind(n) !== "phys")) return INVALID;
+  if (!i.sw) return `Name: ${shortIf(n)}\nSwitchport: Disabled`;      // a routed port
   const sw = i.sw, up = s.net.st.status(d.name, n).up;
   const vname = v => (d.vlans[v] ? d.vlans[v].name : "Inactive");
   return [
@@ -438,7 +443,7 @@ function showSwitchport(s, n) {
 
 function showIpRoute(s) {
   const d = s.dev;
-  if (d.kind === "switch") return d.defaultGw != null ? `Default gateway is ${intToIp(d.defaultGw)}\n\nHost               Gateway           Last Use    Total Uses  Interface\nICMP redirect cache is empty` : "Default gateway is not set\n\nHost               Gateway           Last Use    Total Uses  Interface\nICMP redirect cache is empty";
+  if (d.kind === "switch" && !d.ipRouting) return d.defaultGw != null ? `Default gateway is ${intToIp(d.defaultGw)}\n\nHost               Gateway           Last Use    Total Uses  Interface\nICMP redirect cache is empty` : "Default gateway is not set\n\nHost               Gateway           Last Use    Total Uses  Interface\nICMP redirect cache is empty";
   const rt = s.net.st.rt[d.name];
   const out = [
     "Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP",
@@ -1001,7 +1006,7 @@ reg("priv", "clear ip ospf process", s => {
     d.ospfRid = null;
     s.net.touch();
   });
-}, ["router"]);
+});
 reg("priv", "clear <rest>", () => {});
 reg("priv", "debug <rest>", () => "% Debugging is not available in this lab.");
 reg("priv", "undebug all", () => "All possible debugging has been turned off");
@@ -1025,7 +1030,7 @@ export function traceHops(net, from, ip) {
   for (const h of path || []) {
     if (h.to === (r.target || null) && (r.ok || r.stage === "reply")) continue;
     const d = net.devs[h.to];
-    if (d.kind !== "router") continue;
+    if (!isRouting(d)) continue;                 // routers, and switches that route
     const i = d.ifaces[h.toIf];
     hops.push(i.ip != null ? intToIp(i.ip) : "*");
   }
@@ -1062,8 +1067,8 @@ function showIpInterface(s, only) {
   }
   return out.join("\n");
 }
-show("ip interface", s => showIpInterface(s), ["router"]);
-show("ip interface <if>", (s, n) => (s.dev.ifaces[n] ? showIpInterface(s, n) : INVALID), ["router"]);
+show("ip interface", s => showIpInterface(s));
+show("ip interface <if>", (s, n) => (s.dev.ifaces[n] ? showIpInterface(s, n) : INVALID));
 show("interfaces", s => showInterfaces(s));
 show("interfaces <if>", (s, n) => showInterfaces(s, n));
 show("interfaces trunk", showTrunk, ["switch"]);
@@ -1077,12 +1082,12 @@ show("ip route", showIpRoute);
 show("ip route ospf|static|connected", (s, src) => {
   const codes = { ospf: ["O"], static: ["S"], connected: ["C", "L"] }[src];
   return showIpRoute(s).split("\n").filter(l => codes.includes(l[0]) && /^\S+\s+\d/.test(l)).join("\n");
-}, ["router"]);
-show("ip ospf neighbor", showOspfNbr, ["router"]);
-show("ip ospf interface brief", showOspfIf, ["router"]);
-show("ip ospf interface", s => showOspfIfDetail(s), ["router"]);
-show("ip ospf interface <if>", (s, n) => showOspfIfDetail(s, n), ["router"]);
-show("ip ospf", s => showIpProtocols(s), ["router"]);
+});
+show("ip ospf neighbor", showOspfNbr);
+show("ip ospf interface brief", showOspfIf);
+show("ip ospf interface", s => showOspfIfDetail(s));
+show("ip ospf interface <if>", (s, n) => showOspfIfDetail(s, n));
+show("ip ospf", s => showIpProtocols(s));
 show("ip protocols", showIpProtocols);
 show("access-lists", showAcls);
 show("ip access-lists", showAcls);
@@ -1230,31 +1235,36 @@ function addRoute(s, net, mask, via, ad) {
   s.dev.routes = s.dev.routes.filter(x => !(x.net === net && x.mask === mask && x.nh === r.nh && x.iface === r.iface));
   s.dev.routes.push(r);
 }
-reg("config", "ip route <ip> <ip> <ip>", addRoute, ["router"]);
-reg("config", "ip route <ip> <ip> <ip> <num>", addRoute, ["router"]);
-reg("config", "ip route <ip> <ip> <if>", addRoute, ["router"]);
-reg("config", "ip route <ip> <ip> <if> <num>", addRoute, ["router"]);
+reg("config", "ip route <ip> <ip> <ip>", addRoute);
+reg("config", "ip route <ip> <ip> <ip> <num>", addRoute);
+reg("config", "ip route <ip> <ip> <if>", addRoute);
+reg("config", "ip route <ip> <ip> <if> <num>", addRoute);
 const delRoute = (s, net, mask, via) => {
   const before = s.dev.routes.length;
   s.dev.routes = s.dev.routes.filter(x => !(x.net === net && x.mask === mask && (via === undefined || x.nh === via || x.iface === via)));
   if (before === s.dev.routes.length) return "%No matching route to delete";
 };
-reg("config", "no ip route <ip> <ip>", delRoute, ["router"]);
-reg("config", "no ip route <ip> <ip> <ip>", delRoute, ["router"]);
-reg("config", "no ip route <ip> <ip> <if>", delRoute, ["router"]);
-reg("config", "no ip route <ip> <ip> <ip> <num>", delRoute, ["router"]);
-reg("config", "ip routing", () => {}, ["router"]);
+reg("config", "no ip route <ip> <ip>", delRoute);
+reg("config", "no ip route <ip> <ip> <ip>", delRoute);
+reg("config", "no ip route <ip> <ip> <if>", delRoute);
+reg("config", "no ip route <ip> <ip> <ip> <num>", delRoute);
+// A router always routes. A multilayer switch starts as a layer 2 device and
+// routes between its SVIs and routed ports only after "ip routing".
+reg("config", "ip routing", s => { if (s.dev.kind === "switch") s.dev.ipRouting = true; });
+reg("config", "no ip routing", s => { if (s.dev.kind === "switch") s.dev.ipRouting = false; else return "% Not simulated: a router with routing switched off."; });
+const NO_ROUTING = "% IP routing not enabled\nTip: on a switch, type \"ip routing\" in global configuration first.";
 reg("config", "ip default-gateway <ip>", (s, ip) => { s.dev.defaultGw = ip; }, ["switch"]);
 reg("config", "no ip default-gateway", s => { s.dev.defaultGw = null; }, ["switch"]);
 
 // OSPF
 reg("config", "router ospf <num>", (s, pid) => {
   if (pid < 1 || pid > 65535) return INVALID;
+  if (!isRouting(s.dev)) return NO_ROUTING;
   s.dev.ospf[pid] ||= { routerId: null, networks: [], passive: [], passiveDefault: false, noPassive: [], defaultOriginate: false, always: false, misc: [] };
   s.mode = "router";
   s.ctx = { pid };
-}, ["router"]);
-reg("config", "no router ospf <num>", (s, pid) => { delete s.dev.ospf[pid]; }, ["router"]);
+});
+reg("config", "no router ospf <num>", (s, pid) => { delete s.dev.ospf[pid]; });
 const proc = s => s.dev.ospf[s.ctx.pid];
 reg("router", "network <ip> <ip> area <num>", (s, ip, wild, area) => {
   if (maskLen(~wild >>> 0) === null) return "% OSPF: Invalid wildcard mask";
@@ -1489,7 +1499,19 @@ const sw = (s, fn) => each(s, i => {
   if (!r && ifKind(i.name) === "po") for (const m of membersOf(s.dev, i.name)) fn(m.sw, m);
   return r;
 });
-reg("if", "switchport", () => {}, swOnly);
+// "no switchport" turns a physical switch port into a routed port: no VLAN, no
+// spanning tree, and it takes an IP address like a router interface.
+// "switchport" turns it back, and the address goes.
+reg("if", "switchport", s => each(s, i => {
+  if (i.sw || ifKind(i.name) !== "phys") return;
+  i.sw = newSwitchport();
+  i.ip = null; i.mask = null;
+}), swOnly);
+reg("if", "no switchport", s => each(s, i => {
+  if (ifKind(i.name) !== "phys") return "% Not simulated: only a physical port can become a routed port here (no layer 3 port-channels).";
+  if (i.channel) return "% Command rejected: the port is a member of a port-channel.";
+  i.sw = null;
+}), swOnly);
 reg("if", "switchport mode access|trunk", (s, m) => sw(s, x => { x.mode = m; }), swOnly);
 const DTP_CONFLICT = "Command rejected: Conflict between 'nonegotiate' and 'dynamic' status.";
 reg("if", "switchport mode dynamic auto|desirable", (s, m) => sw(s, x => { if (x.nonegotiate) return DTP_CONFLICT; x.mode = null; x.dtp = m; }), swOnly);
@@ -1575,30 +1597,34 @@ reg("if", "no ip nat inside|outside", s => each(s, i => { i.nat = null; }), rOnl
 reg("if", "ip access-group <word> in|out", (s, name, dir) => each(s, i => { if (dir === "in") i.aclIn = name; else i.aclOut = name; }), rOnly);
 reg("if", "no ip access-group <word> in|out", (s, name, dir) => each(s, i => { if (dir === "in") i.aclIn = null; else i.aclOut = null; }), rOnly);
 reg("if", "no ip access-group in|out", (s, dir) => each(s, i => { if (dir === "in") i.aclIn = null; else i.aclOut = null; }), rOnly);
-reg("if", "ip helper-address <ip>", (s, ip) => each(s, i => { if (!i.helpers.includes(ip)) i.helpers.push(ip); }), rOnly);
-reg("if", "no ip helper-address <ip>", (s, ip) => each(s, i => { i.helpers = i.helpers.filter(h => h !== ip); }), rOnly);
-reg("if", "no ip helper-address", s => each(s, i => { i.helpers = []; }), rOnly);
+// These work on any layer 3 interface: a router interface, an SVI or a routed
+// switch port. A layer 2 switch port refuses them.
+const l3each = (s, fn) => each(s, i => (i.sw ? "% Command rejected: this is a layer 2 port. Use an SVI (interface vlan) or a routed port (no switchport)." : fn(i)));
+reg("if", "ip helper-address <ip>", (s, ip) => l3each(s, i => { if (!i.helpers.includes(ip)) i.helpers.push(ip); }));
+reg("if", "no ip helper-address <ip>", (s, ip) => l3each(s, i => { i.helpers = i.helpers.filter(h => h !== ip); }));
+reg("if", "no ip helper-address", s => l3each(s, i => { i.helpers = []; }));
 reg("if", "ip ospf <num> area <num>", (s, pid, area) => {
+  if (!isRouting(s.dev)) return NO_ROUTING;
   s.dev.ospf[pid] ||= { routerId: null, networks: [], passive: [], passiveDefault: false, noPassive: [], defaultOriginate: false, always: false, misc: [] };
-  return each(s, i => { i.ospfArea = { pid, area }; });
-}, rOnly);
-reg("if", "no ip ospf <num> area <num>", s => each(s, i => { i.ospfArea = null; }), rOnly);
+  return l3each(s, i => { i.ospfArea = { pid, area }; });
+});
+reg("if", "no ip ospf <num> area <num>", s => l3each(s, i => { i.ospfArea = null; }));
 // the ranges IOS accepts: cost and timers 1-65535, priority 0-255
 const inRange = (n, lo, hi) => Number.isInteger(n) && n >= lo && n <= hi;
-reg("if", "ip ospf cost <num>", (s, n) => (inRange(n, 1, 65535) ? each(s, i => { i.ospfCost = n; }) : INVALID), rOnly);
-reg("if", "no ip ospf cost", s => each(s, i => { i.ospfCost = null; }), rOnly);
-reg("if", "ip ospf priority <num>", (s, n) => (inRange(n, 0, 255) ? each(s, i => { i.ospfPri = n; }) : INVALID), rOnly);
-reg("if", "no ip ospf priority", s => each(s, i => { i.ospfPri = null; }), rOnly);
-reg("if", "ip ospf hello-interval <num>", (s, n) => (inRange(n, 1, 65535) ? each(s, i => { i.ospfHello = n === 10 ? null : n; }) : INVALID), rOnly);
-reg("if", "no ip ospf hello-interval", s => each(s, i => { i.ospfHello = null; }), rOnly);
-reg("if", "ip ospf dead-interval <num>", (s, n) => (inRange(n, 1, 65535) ? each(s, i => { i.ospfDead = n; }) : INVALID), rOnly);
-reg("if", "no ip ospf dead-interval", s => each(s, i => { i.ospfDead = null; }), rOnly);
-reg("if", "ip ospf network point-to-point|broadcast", (s, t) => each(s, i => {
+reg("if", "ip ospf cost <num>", (s, n) => (inRange(n, 1, 65535) ? l3each(s, i => { i.ospfCost = n; }) : INVALID));
+reg("if", "no ip ospf cost", s => l3each(s, i => { i.ospfCost = null; }));
+reg("if", "ip ospf priority <num>", (s, n) => (inRange(n, 0, 255) ? l3each(s, i => { i.ospfPri = n; }) : INVALID));
+reg("if", "no ip ospf priority", s => l3each(s, i => { i.ospfPri = null; }));
+reg("if", "ip ospf hello-interval <num>", (s, n) => (inRange(n, 1, 65535) ? l3each(s, i => { i.ospfHello = n === 10 ? null : n; }) : INVALID));
+reg("if", "no ip ospf hello-interval", s => l3each(s, i => { i.ospfHello = null; }));
+reg("if", "ip ospf dead-interval <num>", (s, n) => (inRange(n, 1, 65535) ? l3each(s, i => { i.ospfDead = n; }) : INVALID));
+reg("if", "no ip ospf dead-interval", s => l3each(s, i => { i.ospfDead = null; }));
+reg("if", "ip ospf network point-to-point|broadcast", (s, t) => l3each(s, i => {
   if (ifKind(i.name) === "loop") return "% OSPF: Network type cannot be changed on a loopback in this lab.";
   const def = i.name.startsWith("Serial") ? "p2p" : "broadcast", want = t === "broadcast" ? "broadcast" : "p2p";
   i.ospfNet = want === def ? null : want;
-}), rOnly);
-reg("if", "no ip ospf network", s => each(s, i => { i.ospfNet = null; }), rOnly);
+}));
+reg("if", "no ip ospf network", s => l3each(s, i => { i.ospfNet = null; }));
 
 // Run a list of config lines against a device (used to preconfigure levels).
 export function applyConfig(net, devName, lines) {

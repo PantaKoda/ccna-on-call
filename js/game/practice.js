@@ -642,6 +642,99 @@ export function aclFaultLab({ site, staff, guest, servers, port, who, guestFault
   };
 }
 
+// ---------------------------------------------------------------- layer 3 switching
+// A distribution switch takes over inter-VLAN routing from a router. DSW1 has a
+// trunk to the access switch and a link to R1 that has to become a routed port.
+//   form "build"  nothing layer 3 is configured on DSW1 yet. `trap` hides one
+//                 reason for an SVI to stay down: null, "no-vlan" or "trunk".
+//   form "fault"  everything was configured, then one thing was broken:
+//                 no-routing, svi-shut, no-vlan, trunk, uplink-l2 or no-default.
+// `hit` is the index of the VLAN the trap or fault picks on.
+export function l3SwitchLab({ site, vlans, up, servers, form, trap, fault, hit = vlans.length - 1 }) {
+  const ids = vlans.map(v => v[0]), [vx, nx] = vlans[hit];
+  const lan = v => `192.168.${v}`, link = `10.255.${up}`, sLan = `10.${servers}.0`, srv = `${sLan}.10`;
+  const broken = form === "fault" ? fault : trap;            // what is wrong on DSW1, if anything
+  const hosts = ids.map((v, k) => ({ name: `PC-${"ABC"[k]}`, ip: `${lan(v)}.10`, v }));
+  const named = list => list.flatMap(([v, n]) => [`vlan ${v}`, `name ${n}`]);
+
+  const trunk = ["interface g0/1", "switchport mode trunk", `switchport trunk allowed vlan ${(broken === "trunk" ? ids.filter(v => v !== vx) : ids).join(",")}`, "exit"];
+  const svis = ids.flatMap(v => [`interface vlan ${v}`, `ip address ${lan(v)}.1 ${M24}`, ...(broken === "svi-shut" && v === vx ? ["shutdown"] : [])]);
+  const uplink = ["interface g0/2", "no switchport", `ip address ${link}.2 ${M30}`, "exit"];
+  const defRoute = `ip route 0.0.0.0 0.0.0.0 ${link}.1`;
+  const layer2 = [...named(vlans.filter(([v]) => !(broken === "no-vlan" && v === vx))), ...trunk];
+  const dsw = form === "build" ? layer2
+    : [...layer2, ...(broken === "no-routing" ? [] : ["ip routing"]), ...svis, "exit", ...(broken === "uplink-l2" ? [] : uplink), ...(broken === "no-default" ? [] : [defRoute])];
+
+  const repair = {
+    "no-vlan": [`vlan ${vx}`, `name ${nx}`, "exit"],
+    trunk: ["interface g0/1", `switchport trunk allowed vlan add ${vx}`, "exit"],
+    "svi-shut": [`interface vlan ${vx}`, "no shutdown", "exit"],
+    "no-routing": ["ip routing"],
+    "uplink-l2": uplink,
+    "no-default": [defRoute],
+  };
+  const fix = form === "build" ? [...(broken ? repair[broken] : []), "ip routing", ...svis, "exit", ...uplink, defRoute] : repair[broken];
+
+  const symptom = {
+    "no-routing": "no PC reaches another VLAN or the server, although each PC can still ping its own gateway.",
+    "svi-shut": `the PCs in VLAN ${vx} (${nx}) cannot reach their gateway. The other VLANs are fine.`,
+    "no-vlan": `the PCs in VLAN ${vx} (${nx}) cannot reach their gateway. The other VLANs are fine.`,
+    trunk: `the PCs in VLAN ${vx} (${nx}) cannot reach their gateway. The other VLANs are fine.`,
+    "uplink-l2": "PCs reach each other across the VLANs, but nobody reaches the server behind R1.",
+    "no-default": "PCs reach each other across the VLANs, but nobody reaches the server behind R1.",
+  };
+  const cause = {
+    "no-routing": "`show ip route` on DSW1 still answers like a layer 2 switch (\"Default gateway is not set\") instead of printing a routing table: `ip routing` is missing.",
+    "svi-shut": `\`show ip interface brief\` lists Vlan${vx} as administratively down. Bring it up with \`no shutdown\`.`,
+    "no-vlan": `\`show ip interface brief\` lists Vlan${vx} as down/down, and \`show vlan brief\` has no VLAN ${vx}. The SVI was created, but the VLAN itself does not exist on DSW1. Create it with \`vlan ${vx}\`.`,
+    trunk: `Vlan${vx} is down/down although VLAN ${vx} exists. \`show interfaces trunk\` shows why: ${vx} is not in the allowed list of G0/1, so no active port on DSW1 carries that VLAN. Add it with \`switchport trunk allowed vlan add ${vx}\`.`,
+    "uplink-l2": "`show interfaces status` lists G0/2 as an ordinary port in VLAN 1 instead of `routed`, and it has no address. Turn it into a routed port with `no switchport` and give it its address again.",
+    "no-default": `\`show ip route\` on DSW1 says "Gateway of last resort is not set". Add \`${defRoute}\`.`,
+  };
+
+  return {
+    subject: form === "build" ? "Move inter-VLAN routing to the distribution switch" : "Routing on the distribution switch broke overnight",
+    brief: form === "build" ? [
+      `The ${site} office has outgrown its router-on-a-stick: every packet between two VLANs crossed the same router port twice. The new distribution switch **DSW1** can route, so the gateways move onto it. The router side was changed this morning: R1 now has a plain routed link to DSW1 and static routes back to the VLAN subnets.`,
+      "Your part is **DSW1**. Switch on routing, give each VLAN its gateway on a switch virtual interface (SVI), turn the port facing R1 into a routed port, and add a default route to R1. The access switch and the PCs are ready; each PC uses the .1 address of its VLAN as its gateway.",
+      "Make sure every SVI really comes up before you call it done.",
+    ] : [
+      `Inter-VLAN routing at ${site} was moved to the distribution switch **DSW1** last week and has worked since. After a change last night, ${symptom[broken]}`,
+      "There is exactly one fault, and it is on DSW1. Find it with show commands before you change anything.",
+    ],
+    details: [["VLANs", vlans.map(([v, n]) => `${v} ${n}`).join(", ")], ["Gateways", ids.map(v => `Vlan${v}: ${lan(v)}.1/24`).join(", ")], ["DSW1 G0/1", "Trunk to ASW1"],
+      ["DSW1 G0/2", `Routed link to R1: ${link}.2/30 (R1 is ${link}.1)`], ["Server", `${srv}, behind R1`], ["PCs", hosts.map(h => `${h.name} ${h.ip}`).join(", ")]],
+    topology: {
+      devices: [
+        { name: "DSW1", kind: "switch", hostname: "DSW1", x: 460, y: 120, note: "Distribution (layer 3)", config: dsw },
+        { name: "ASW1", kind: "switch", hostname: "ASW1", x: 460, y: 290, note: "Access",
+          config: [...named(vlans), ...ids.flatMap((v, k) => [`interface fa0/${k + 1}`, "switchport mode access", `switchport access vlan ${v}`]), "interface g0/1", "switchport mode trunk", `switchport trunk allowed vlan ${ids.join(",")}`] },
+        { name: "R1", kind: "router", hostname: "R1", x: 700, y: 120, config: [...ifc("g0/0", `${link}.1`, M30), ...ifc("g0/1", `${sLan}.1`, M24), "exit", ...ids.map(v => `ip route ${lan(v)}.0 ${M24} ${link}.2`)] },
+        { name: "SRV", kind: "server", x: 890, y: 120, note: "Server", services: ["http"], ip: { mode: "static", ip: srv, mask: M24, gw: `${sLan}.1` } },
+        ...hosts.map((h, k) => pc(h.name, 260 + 200 * k, 440, h.ip, M24, `${lan(h.v)}.1`)),
+      ],
+      links: ["DSW1:g0/1 ASW1:g0/1", "DSW1:g0/2 R1:g0/0", "R1:g0/1 SRV", ...hosts.map((h, k) => `ASW1:fa0/${k + 1} ${h.name}`)],
+    },
+    objectives: [
+      { text: "IP routing is switched on at DSW1", check: C.ipRouting("DSW1") },
+      { text: `DSW1 has a gateway SVI for every VLAN (${ids.map(v => `Vlan${v} ${lan(v)}.1`).join(", ")}) and each one is up/up`, check: C.all(...ids.flatMap(v => [C.ifaceIp("DSW1", `vlan ${v}`, `${lan(v)}.1`, M24), C.ifaceUp("DSW1", `vlan ${v}`)])) },
+      { text: `G0/2 on DSW1 is a routed port with ${link}.2/30`, check: C.all(C.routedPort("DSW1", "g0/2"), C.ifaceIp("DSW1", "g0/2", `${link}.2`, M30)) },
+      { text: "PCs in different VLANs reach each other", check: C.all(C.ping(hosts[0].name, hosts[1].ip), C.ping(hosts[1].name, hosts[2].ip), C.ping(hosts[2].name, hosts[0].ip)) },
+      { text: "DSW1 has a default route through R1, and every PC reaches the server", check: C.all(C.hasRoute("DSW1", "0.0.0.0/0", "S"), ...hosts.map(h => C.ping(h.name, srv))) },
+      // creating a VLAN changes the VLAN database, not the running configuration, so there is nothing to save after that one repair
+      ...(form === "fault" && broken === "no-vlan" ? [] : [{ text: "DSW1 is saved", check: C.savedChanged("DSW1") }]),
+    ],
+    hints: [
+      "A layer 3 switch does not route until it is told to: `ip routing` in global configuration. Each VLAN then gets its gateway on a switch virtual interface: `interface vlan 10`, then `ip address ...`. Once routing is on, `show ip route` on the switch prints a routing table, as it does on a router.",
+      "An SVI is up/up only when three things are true: it is not shut down, its VLAN exists (`show vlan brief`), and at least one port that carries the VLAN is up, either an access port in it or a trunk that allows it (`show interfaces trunk`). `show ip interface brief` shows which SVI is down.",
+      form === "build"
+        ? `For the uplink: \`interface g0/2\`, \`no switchport\`, then \`ip address ${link}.2 ${M30}\`. \`no switchport\` makes the port a routed port, like a router interface. Then \`${defRoute}\`.${broken === "no-vlan" ? ` If Vlan${vx} stays down, look for VLAN ${vx} in \`show vlan brief\`.` : broken === "trunk" ? ` If Vlan${vx} stays down, look for ${vx} in \`show interfaces trunk\`.` : ""}`
+        : cause[broken],
+    ],
+    solution: [{ on: "DSW1", cmds: [...cfg(...fix), "write memory"] }],
+  };
+}
+
 // ---------------------------------------------------------------- generators
 const pickVlans = x => { const ids = x.sample(VLAN_IDS, 2).sort((m, n) => m - n), names = x.sample(VLAN_NAMES, 2); return ids.map((id, i) => ({ id, name: names[i] })); };
 const CHANNEL_PORTS = [["g0/1", "g0/2"], ["fa0/7", "fa0/8"], ["fa0/5", "fa0/6"], ["fa0/6", "fa0/7", "fa0/8"], ["fa0/3", "fa0/4", "fa0/5"]];
@@ -905,6 +998,14 @@ const SKILLS = [
   },
 
   // ---------- inter-VLAN routing
+  {
+    id: "svi-routing", topic: "intervlan", name: "Route between VLANs on a layer 3 switch", par: 660,
+    gen(x) {
+      const ids = x.sample(VLAN_IDS, 3).sort((p, q) => p - q), names = x.sample(VLAN_NAMES, 3);
+      return l3SwitchLab({ site: x.pick(SITES), vlans: ids.map((v, k) => [v, names[k]]), up: x.int(0, 200), servers: x.int(0, 200), hit: x.int(0, 2),
+        form: x.pick(["build", "fault"]), trap: x.pick([null, "no-vlan", "trunk"]), fault: x.pick(["no-routing", "svi-shut", "no-vlan", "trunk", "uplink-l2", "no-default"]) });
+    },
+  },
   {
     id: "roas", topic: "intervlan", name: "Route between VLANs on one link", par: 540,
     gen(x) {
@@ -1363,7 +1464,7 @@ const AFTER = {
   "stp-root": "root-bridge", "stp-guards": "root-bridge", "rogue-root": "rogue-switch", "channel-build": "port-channel", "channel-fault": "port-channel",
   "ansible-vlan": "ansible-rollout", "static-floating": "floating-backup", "relay-build": "dhcp-relay", "relay-fault": "dhcp-relay",
   "cli-name": "first-console", "cli-setup": "lock-it-down", "addr-lan": "desk-move", "addr-fault": "desk-move", "addr-svi": "switch-mgmt",
-  "vlan-access": "vlans-101", "vlan-trunk": "trunk-line", "vlan-fault": "trunk-line", roas: "router-on-a-stick", "port-sec": "port-security",
+  "vlan-access": "vlans-101", "vlan-trunk": "trunk-line", "vlan-fault": "trunk-line", roas: "router-on-a-stick", "svi-routing": "l3-switch", "port-sec": "port-security",
   "static-chain": "static-routes", "static-default": "default-route", "ospf-build": "ospf-single-area", "ospf-fault": "ospf-broken", "ospf-tune": "ospf-tuning",
   "dhcp-pool": "dhcp-pools", "nat-pat": "nat-edge", "acl-filter": "acl-guard", "acl-fault": "acl-broken", "ssh-setup": "ssh-hardening",
 };

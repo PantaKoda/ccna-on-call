@@ -108,7 +108,7 @@ export const LEVEL_TOPIC = {
   "subnet-sprint-1": "subnetting", "subnet-sprint-2": "subnetting",
   "desk-move": "addressing", "switch-mgmt": "addressing",
   "vlans-101": "vlans", "trunk-line": "vlans",
-  "router-on-a-stick": "intervlan",
+  "router-on-a-stick": "intervlan", "l3-switch": "intervlan",
   "port-security": "l2security",
   "root-bridge": "switching", "rogue-switch": "switching", "port-channel": "switching",
   "static-routes": "static", "default-route": "static", "floating-backup": "static",

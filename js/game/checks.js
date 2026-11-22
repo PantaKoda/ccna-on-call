@@ -25,6 +25,9 @@ export const C = {
   // --- interfaces
   ifaceIp: (dev, n, addr, mask) => net => { const i = iface(net, dev, n); return !!i && i.ip === I(addr) && i.mask === I(mask); },
   ifaceUp: (dev, n) => net => net.st.status(dev, normIf(n)).up,
+  ipRouting: dev => net => !!net.devs[dev].ipRouting,
+  // a switch port turned into a layer 3 port with "no switchport"
+  routedPort: (dev, n) => net => { const i = iface(net, dev, n); return !!i && !i.sw; },
   ifaceShut: (dev, list) => net => list.every(n => iface(net, dev, n).shutdown),
   dot1q: (dev, n, vlan) => net => { const i = iface(net, dev, n); return !!i && i.dot1q === vlan; },
   hostIp: (dev, addr, mask, gw) => net => { const c = net.devs[dev].ipcfg; return c.mode === "static" && c.ip === I(addr) && c.mask === I(mask) && c.gw === I(gw); },
@@ -96,7 +99,7 @@ export const C = {
   // --- routing
   hasRoute: (dev, prefix, proto) => net => {
     const [a, len] = prefix.split("/");
-    return net.st.rt[dev].some(r => r.net === I(a) && r.len === Number(len) && (!proto || r.proto.startsWith(proto)));
+    return (net.st.rt[dev] || []).some(r => r.net === I(a) && r.len === Number(len) && (!proto || r.proto.startsWith(proto)));
   },
   // a static route to the prefix through this next hop with exactly this administrative distance
   floating: (dev, prefix, nh, ad) => net => {

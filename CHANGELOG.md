@@ -4,6 +4,20 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- Switches in the simulator can route. `ip routing` turns a switch into a layer 3 switch: it then routes between its SVIs, `show ip route` prints a routing table, static routes work, and it ignores `ip default-gateway`, as a real one does.
+- `no switchport` makes a switch port a routed port that takes an IP address and belongs to no VLAN; `switchport` turns it back and removes the address. `show interfaces status` lists such a port as `routed`.
+- An SVI now follows the real rule for coming up: its VLAN must exist and at least one active port must carry it.
+- OSPF runs on a routing switch too, over SVIs and routed ports, and `ip helper-address` is accepted on them.
+- New lab "Retire the Stick" (tier 3), after "The Way Out": move inter-VLAN routing from a router-on-a-stick to the distribution switch. You switch on routing, build three SVIs, turn the uplink into a routed port and add a default route. One SVI stays down until you work out why.
+- A variant template for it with a build form (sometimes with a hidden reason for an SVI to stay down) and a troubleshooting form with six faults: routing switched off, an SVI shut down, a VLAN missing from the switch, a VLAN missing from the trunk, the uplink turned back into a switch port, and a missing default route.
+- Theory: the layer 3 switch section on the inter-VLAN routing page now covers `ip routing`, SVIs, routed ports, why `ip default-gateway` stops mattering, and why an SVI stays down. Five new questions (one of them "choose two"), and a handbook table for the commands. The bank now has 227.
+
+### Fixed
+
+- `tracert` and `traceroute` count a routing switch as a hop.
+
 ## [0.13.1] - 2026-11-22
 
 Follows a second review of the material.

@@ -60,6 +60,15 @@ const SECTIONS = [
     ["encapsulation dot1q 10", "subinterface", "Tag the subinterface for VLAN 10; needed before the IP address"],
     ["ip address 192.168.10.1 255.255.255.0", "subinterface", "The default gateway for that VLAN"],
   ]],
+  ["Inter-VLAN routing (layer 3 switch)", ["Command", "Where", "What it does"], [
+    ["ip routing", "config", "Make the switch route between its SVIs and routed ports"],
+    ["interface vlan 10", "config", "The SVI of VLAN 10: give it the gateway address of that VLAN"],
+    ["no switchport", "interface", "Turn a switch port into a routed port that takes an IP address"],
+    ["switchport", "interface", "Turn it back into a layer 2 port (the address is removed)"],
+    ["ip route 0.0.0.0 0.0.0.0 10.255.0.1", "config", "Default route; a routing switch ignores ip default-gateway"],
+    ["show ip interface brief", ">", "SVIs and routed ports with address and state; down/down means the VLAN is missing or inactive"],
+    ["show interfaces status", ">", "A routed port shows \"routed\" in the VLAN column"],
+  ]],
   ["Static routing", ["Command", "Where", "What it does"], [
     ["ip route 10.2.0.0 255.255.255.0 10.0.12.2", "config", "Static route: network, mask, next hop"],
     ["ip route 0.0.0.0 0.0.0.0 203.0.113.1", "config", "Default route"],
