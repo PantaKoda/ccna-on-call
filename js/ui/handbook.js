@@ -107,10 +107,20 @@ function filter(doc, query, countEl) {
 
 // ---- the drawer
 let drawer = null;
+let returnTo = null;   // what had focus before the drawer opened (the terminal, during a lab)
+
+// The keyboard shortcut, shown on the Handbook button. F1 everywhere; Ctrl+K
+// (Cmd+K on a Mac) for keyboards where F1 needs the Fn key.
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+export const HANDBOOK_KEYS = { label: MAC ? "F1 or ⌘K" : "F1 or Ctrl+K", aria: MAC ? "F1 Meta+K" : "F1 Control+K" };
+export const isHandbookKey = e => !e.repeat && !e.altKey && !e.shiftKey && (
+  (e.key === "F1" && !e.ctrlKey && !e.metaKey) ||
+  (e.key.toLowerCase() === "k" && (MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey)));
 
 // open (or switch) the drawer; `topic` shows that topic's theory page
 export function openHandbook(topic) {
   if (drawer) closeHandbook();
+  returnTo = document.activeElement;
   const body = h("div", { class: "hb-body" }, h("p", { class: "muted" }, "Loading..."));
   const count = h("span", { class: "muted small" });
   const search = h("input", { class: "hb-search", type: "search", placeholder: "Search this page, e.g. trunk allowed", "aria-label": "Search the handbook" });
@@ -146,5 +156,9 @@ export function toggleHandbook() {
   if (drawer) closeHandbook(); else openHandbook();
 }
 export function closeHandbook() {
-  if (drawer) { drawer.remove(); drawer = null; }
+  if (!drawer) return;
+  drawer.remove(); drawer = null;
+  // back to where you were typing
+  if (returnTo && returnTo.isConnected && returnTo !== document.body) returnTo.focus();
+  returnTo = null;
 }

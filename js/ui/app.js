@@ -7,7 +7,7 @@ import { EXAMS, TOPIC_BY_ID, LEVEL_TOPIC, topicsByDomain, topicOnly } from "../g
 import { variantsOf, makeVariant } from "../game/practice.js";
 import { mountLab } from "./labview.js";
 import { mountSubnet, mountDrill, mountQuiz, loadBank, countByTopic, SOURCES } from "./drills.js";
-import { toggleHandbook, closeHandbook, loadTheory, renderMarkdown, theoryPage } from "./handbook.js";
+import { toggleHandbook, closeHandbook, loadTheory, renderMarkdown, theoryPage, HANDBOOK_KEYS, isHandbookKey } from "./handbook.js";
 import { VERSION } from "../version.js";
 import { updateButton, storageNote, desktopLinks } from "./desktop.js";
 import { isCockpit, cockpitButton, cockpitExtras } from "./cockpit.js";
@@ -41,7 +41,7 @@ function renderTopbar(where) {
     chosen ? h("a", { class: "btn small exam-chip", href: "#/exam", title: `Studying for ${EXAMS[store.exam()].name}. Click to change.` }, h("span", { class: "exam-word" }, "Exam "), h("b", {}, EXAMS[store.exam()].short)) : null,
     chosen ? h("span", { class: "top-rank", title: "Your rank" }, r.rank) : null,
     chosen ? h("span", { class: "top-xp" }, `${t.xp} XP`) : null,
-    chosen ? h("button", { class: "btn small", onclick: toggleHandbook, title: "Command reference and theory pages" }, "Handbook") : null,
+    chosen ? h("button", { class: "btn small", onclick: toggleHandbook, title: `Command reference and theory pages (${HANDBOOK_KEYS.label})`, "aria-keyshortcuts": HANDBOOK_KEYS.aria }, "Handbook", h("kbd", { class: "key-hint", "aria-hidden": "true" }, "F1")) : null,
     ...cockpitExtras(),
     cockpitButton(() => renderTopbar(where)),
     isCockpit() ? null : themeButton(where),
@@ -370,5 +370,11 @@ function route() {
   renderHome();
 }
 window.addEventListener("hashchange", route);
+// the Handbook from anywhere, also while typing in a console
+document.addEventListener("keydown", e => {
+  if (!isHandbookKey(e) || !store.examChosen()) return;
+  e.preventDefault();
+  toggleHandbook();
+}, true);
 window.addEventListener("beforeunload", e => { if (view && view.dirty && view.dirty()) e.preventDefault(); });
 route();
