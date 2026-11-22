@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-22
+
 ### Added
 
 - New lab "The Rule That Never Fires" (tier 4), after "Guests Stay in the Lobby". Two access lists were edited overnight and three complaints came in: guests cannot open the intranet page, a guest laptop can ping staff PCs, and nobody can load a website although pings to the Internet work. Every line is valid, so there is no error to read: you test from the PCs, read the match counters and repair the lists by sequence number.
