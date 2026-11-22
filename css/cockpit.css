@@ -63,9 +63,10 @@
 :root[data-skin="cockpit"] #app { position: relative; z-index: 1; }
 
 /* ---------- type ---------- */
-:root[data-skin="cockpit"] :is(h1, h2, h3, .brand, .btn, .seg, .tier-num, .top-rank, .exam-chip, .tab button, .win-title strong) { font-family: var(--hud); }
+:root[data-skin="cockpit"] :is(h1, h2, h3, .brand, .btn, .seg, .top-rank, .exam-chip) { font-family: var(--hud); }
 :root[data-skin="cockpit"] h1 { letter-spacing: .02em; text-shadow: 0 0 22px rgba(70, 224, 255, .3); }
-:root[data-skin="cockpit"] :is(.eyebrow, .tag, .track-name, .ticket h3, .study-side h3) { font-family: var(--hud); letter-spacing: .18em; }
+/* small uppercase labels are JetBrains Mono, like a ship's readouts */
+:root[data-skin="cockpit"] :is(.eyebrow, .tag, .track-name, .tier-num, .ticket h3, .study-side h3, .win-title strong, .tab button, .ck-label) { font-family: var(--mono); letter-spacing: .14em; }
 :root[data-skin="cockpit"] .eyebrow::before { content: "▸ "; opacity: .7; }
 
 /* ---------- glass panels ---------- */
@@ -198,15 +199,15 @@
    keeps the plain system font for easy reading at length, and the console and
    network map glow. The rest of the cockpit keeps its HUD type. */
 :root[data-skin="cockpit"] .play.lab { --radius: 12px; }
-:root[data-skin="cockpit"] .play.lab :is(h2, h3, .btn, .tag, .tab button, .win-title strong, .ticket h3) { font-family: var(--sans); }
-:root[data-skin="cockpit"] .play.lab .tag { letter-spacing: .08em; background: rgba(70, 224, 255, .09); box-shadow: 0 0 10px rgba(70, 224, 255, .12); }
+:root[data-skin="cockpit"] .play.lab :is(h2, .btn) { font-family: var(--sans); }
+:root[data-skin="cockpit"] .play.lab .tag { letter-spacing: .1em; background: rgba(70, 224, 255, .09); box-shadow: 0 0 10px rgba(70, 224, 255, .12); }
 :root[data-skin="cockpit"] .play.lab .ticket h3 { letter-spacing: .12em; }
 :root[data-skin="cockpit"] .play.lab .ticket h2 { font-size: 19px; text-shadow: 0 0 16px rgba(70, 224, 255, .22); }
 :root[data-skin="cockpit"] .play.lab .btn { border-radius: 8px; letter-spacing: 0; }
 :root[data-skin="cockpit"] .play.lab .workspace { gap: 12px; }
 :root[data-skin="cockpit"] .play.lab .window { border-color: rgba(70, 224, 255, .26); box-shadow: 0 16px 44px rgba(0, 5, 16, .55), inset 0 1px 0 rgba(160, 245, 255, .16), inset 0 0 24px rgba(70, 224, 255, .035); }
 :root[data-skin="cockpit"] .play.lab .win-title { background: linear-gradient(90deg, rgba(16, 44, 72, .66), rgba(7, 19, 36, .45)); border-bottom-color: rgba(70, 224, 255, .22); }
-:root[data-skin="cockpit"] .play.lab .win-title strong { font-size: 11.5px; font-weight: 700; letter-spacing: .1em; color: #bdf6ff; text-shadow: 0 0 10px rgba(70, 224, 255, .35); }
+:root[data-skin="cockpit"] .play.lab .win-title strong { font-size: 11.5px; font-weight: 700; letter-spacing: .14em; color: #bdf6ff; text-shadow: 0 0 10px rgba(70, 224, 255, .35); }
 :root[data-skin="cockpit"] .play.lab .win-dots i { border-radius: 50%; width: 7px; height: 7px; box-shadow: 0 0 6px rgba(70, 224, 255, .45); }
 :root[data-skin="cockpit"] .play.lab .objectives li { border-radius: 8px; }
 :root[data-skin="cockpit"] .play.lab .objectives li.done { box-shadow: 0 0 14px rgba(92, 240, 168, .16), inset 0 0 12px rgba(92, 240, 168, .06); }
@@ -247,7 +248,7 @@
 .ck-head .eyebrow { margin: 0 0 2px; }
 .ck-sec { padding: 12px 0 2px; }
 .ck-sec + .ck-sec { border-top: 1px solid var(--line); margin-top: 10px; }
-.ck-label { font: 700 11px var(--hud, var(--sans)); letter-spacing: .16em; text-transform: uppercase; color: var(--accent); }
+.ck-label { font: 700 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
 .ck-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 8px 0; }
 .ck-row.between, .ck-field.between { justify-content: space-between; }
 .ck-pills { display: inline-flex; border: 1px solid var(--line-2); border-radius: 5px; overflow: hidden; }

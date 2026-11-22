@@ -5,7 +5,7 @@ import { Lab } from "../game/lab.js";
 import { isHost } from "../engine/network.js";
 import { ipToInt, intToIp, maskLen } from "../engine/ip.js";
 import { Terminal } from "./terminal.js";
-import { keySoundOn, setKeySound } from "./keysound.js";
+import { KEY_SOUNDS, keySoundStyle, setKeySound } from "./keysound.js";
 import { Topology } from "./topology.js";
 import { openHandbook } from "./handbook.js";
 import { LEVEL_TOPIC, TOPIC_BY_ID } from "../game/topics.js";
@@ -53,18 +53,16 @@ export function mountLab(root, level, { onDone, actions = [], note = null, badge
 
   const statTime = h("span", { class: "stat" });
   const statCmds = h("span", { class: "stat" });
-  // typing sounds in the consoles; the button shows whether they are on
-  const keysBtn = h("button", { class: "btn ghost small keys-btn", title: "Keyboard sounds while you type in a console", onclick: () => {
-    setKeySound(!keySoundOn());
-    drawKeys();
+  // typing sounds in the consoles: off, or one of a few styles
+  const keysSel = h("select", { class: "keys-sel", "aria-label": "Typing sound" },
+    Object.entries(KEY_SOUNDS).map(([id, name]) => h("option", { value: id }, id === "off" ? "Keys off" : name)));
+  keysSel.value = keySoundStyle();
+  keysSel.addEventListener("change", () => {
+    setKeySound(keysSel.value);
+    keysBtn.classList.toggle("on", keysSel.value !== "off");
     if (active) terms.get(active)?.focus();
-  } });
-  const drawKeys = () => {
-    const on = keySoundOn();
-    keysBtn.setAttribute("aria-pressed", on ? "true" : "false");
-    keysBtn.replaceChildren(h("span", { "aria-hidden": "true" }, "⌨"), h("span", { class: "keys-word" }, on ? " Keys on" : " Keys off"));
-  };
-  drawKeys();
+  });
+  const keysBtn = h("label", { class: "keys-btn" + (keySoundStyle() !== "off" ? " on" : ""), title: "Sound while you type in a console" }, h("span", { "aria-hidden": "true" }, "⌨"), keysSel);
 
   root.replaceChildren(
     h("div", { class: "workspace" },

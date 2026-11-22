@@ -13,7 +13,7 @@ import path from "node:path";
 export const TYPES = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml",
-  ".md": "text/markdown; charset=utf-8", ".png": "image/png", ".ico": "image/x-icon",
+  ".md": "text/markdown; charset=utf-8", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2",
 };
 
 // only these are part of the game; everything else in the app folder is not served
