@@ -38,6 +38,16 @@ const SECTIONS = [
     ["show ip interface brief", ">", "Every interface with its address and up/down status"],
     ["show interfaces g0/0", ">", "Detail for one interface, including error counters"],
   ]],
+  ["Network discovery and inspection", ["Command", "Where", "What it does"], [
+    ["show cdp neighbors", ">", "Directly connected Cisco neighbours: hostname, local port, platform and remote port"],
+    ["show cdp neighbors detail", ">", "Same as above, plus each neighbour's IP address and IOS version"],
+    ["lldp run", "config", "Enable vendor-neutral LLDP neighbour discovery (off by default on Cisco IOS)"],
+    ["show lldp neighbors", ">", "Directly connected LLDP neighbours (also show lldp neighbors detail)"],
+    ["show mac address-table", ">", "Layer 2 table on a switch: VLAN, learned MAC address and switch port"],
+    ["show ip arp", ">", "Layer 3 to Layer 2 table: IPv4 addresses mapped to MAC addresses on local segments"],
+    ["show interfaces status", ">", "Switch port summary: connected/notconnect, VLAN, negotiated duplex and speed"],
+    ["show ip route", ">", "All known subnets: C connected, L local interface /32, S static, O OSPF"],
+  ]],
   ["VLANs and trunks", ["Command", "Where", "What it does"], [
     ["vlan 10", "config", "Create VLAN 10 and enter its sub-mode"],
     ["name SALES", "vlan", "Name the VLAN"],
@@ -165,8 +175,9 @@ const SECTIONS = [
     ["show etherchannel summary", ">", "Each group, its protocol and a flag per member: P, I, s or D"],
   ]],
   ["PC commands", ["Command", "Where", "What it does"], [
-    ["ipconfig", "PC", "Address, mask and gateway (ipconfig /all adds DHCP and DNS detail)"],
+    ["ipconfig", "PC", "Address, mask and gateway (ipconfig /all adds MAC address, DHCP and DNS detail)"],
     ["ipconfig /renew", "PC", "Ask the DHCP server again"],
+    ["arp -a", "PC", "Local ARP cache: IP-to-MAC mappings for same-subnet hosts and default gateway"],
     ["ping 10.0.0.1", "PC", "Test reachability"],
     ["tracert 8.8.8.8", "PC", "The routers on the path"],
     ["ssh -l admin 10.0.0.1", "PC", "Open an SSH session to a device"],

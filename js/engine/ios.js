@@ -349,6 +349,14 @@ function showIpIntBrief(s) {
   return out.join("\n");
 }
 
+// True when an Ethernet port negotiates 1000 Mb/s: Gigabit on this end and not
+// capped to 100 Mb/s by a FastEthernet port on the far end.
+function negotiatedGig(net, dn, n) {
+  if (!n.startsWith("Gig")) return false;
+  const p = net.peer(dn, n);
+  return !p || !p.ifn.startsWith("Fast");
+}
+
 function showInterfaces(s, name) {
   const d = s.dev, out = [];
   for (const n of name ? [name] : d.ifOrder) {
@@ -356,6 +364,7 @@ function showInterfaces(s, name) {
     if (!i) return INVALID;
     const [a, b] = ifStatusWords(s, d, n);
     const gig = n.startsWith("Gig");
+    const linkGig = b === "up" ? negotiatedGig(s.net, d.name, n) : gig;
     out.push(`${n} is ${a}, line protocol is ${b}`);
     out.push(`  Hardware is ${ifKind(n) === "phys" ? (gig ? "Gigabit Ethernet" : n.startsWith("Serial") ? "HD64570" : "Fast Ethernet") : ifKind(n) === "vlan" ? "EtherSVI" : "Virtual"}, address is ${fakeMac(d.name, d.ifOrder.indexOf(n))}`);
     if (i.desc) out.push(`  Description: ${i.desc}`);
@@ -363,7 +372,7 @@ function showInterfaces(s, name) {
     out.push(`  MTU 1500 bytes, BW ${Number((i.misc.find(x => x.startsWith("bandwidth ")) || "").split(" ")[1]) || defaultBandwidth(n)} Kbit/sec, DLY ${gig ? 10 : 100} usec,`);
     out.push("     reliability 255/255, txload 1/255, rxload 1/255");
     if (i.dot1q != null) out.push(`  Encapsulation 802.1Q Virtual LAN, Vlan ID ${i.dot1q}.`);
-    if (ifKind(n) === "phys" && !n.startsWith("Serial")) out.push(`  ${b === "up" ? "Full-duplex" : "Auto-duplex"}, ${gig ? "1000Mb/s" : "100Mb/s"}, media type is RJ45`);
+    if (ifKind(n) === "phys" && !n.startsWith("Serial")) out.push(`  ${b === "up" ? "Full-duplex" : "Auto-duplex"}, ${linkGig ? "1000Mb/s" : "100Mb/s"}, media type is RJ45`);
     out.push("     0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored", "     0 output errors, 0 collisions, 0 interface resets");
   }
   return out.join("\n");
@@ -418,7 +427,8 @@ function showIntStatus(s) {
     const po = ifKind(n) === "po";
     // a port-channel runs at the speed of its member ports and has no media type of its own
     const gig = po ? d.ifOrder.some(m => m.startsWith("Gig") && (s.net.st.bundle[d.name + "|" + m] || {}).po === n) : n.startsWith("Gig");
-    out.push(`${pad(shortIf(n), 9)} ${pad(i.desc.slice(0, 18), 18)} ${pad(!st.admin ? "disabled" : i.errdisabled ? "err-disabled" : st.up ? "connected" : (s.net.st.bundle[d.name + "|" + n] || {}).state === "s" ? "suspended" : "notconnect", 12)} ${pad(routedPort ? "routed" : st.up && s.net.st.trunking(d.name, n) ? "trunk" : i.sw.accessVlan, 10)} ${pad(st.up ? "a-full" : "auto", 7)} ${pad(st.up ? (gig ? "a-1000" : "a-100") : "auto", 6)} ${po ? "" : gig ? "10/100/1000BaseTX" : "10/100BaseTX"}`.trimEnd());
+    const linkGig = po ? gig : negotiatedGig(s.net, d.name, n);
+    out.push(`${pad(shortIf(n), 9)} ${pad(i.desc.slice(0, 18), 18)} ${pad(!st.admin ? "disabled" : i.errdisabled ? "err-disabled" : st.up ? "connected" : (s.net.st.bundle[d.name + "|" + n] || {}).state === "s" ? "suspended" : "notconnect", 12)} ${pad(routedPort ? "routed" : st.up && s.net.st.trunking(d.name, n) ? "trunk" : i.sw.accessVlan, 10)} ${pad(st.up ? "a-full" : "auto", 7)} ${pad(st.up ? (linkGig ? "a-1000" : "a-100") : "auto", 6)} ${po ? "" : gig ? "10/100/1000BaseTX" : "10/100BaseTX"}`.trimEnd());
   }
   return out.join("\n");
 }
@@ -563,32 +573,236 @@ function showDhcpPool(s) {
   return out.join("\n");
 }
 
-function showMac(s) {
-  const d = s.dev;
-  const out = ["          Mac Address Table", "-------------------------------------------", "", "Vlan    Mac Address       Type        Ports", "----    -----------       --------    -----"];
-  for (const n of d.ifOrder) {
-    const i = d.ifaces[n];
-    if (!i.sw || !s.net.st.status(d.name, n).up) continue;
-    const p = s.net.peer(d.name, n);
-    if (!p || s.net.devs[p.dev].kind === "switch") continue;
-    const sticky = i.sw.ps.on && i.sw.ps.sticky;
-    out.push(`${String(s.net.st.trunking(d.name, n) ? i.sw.native : i.sw.accessVlan).padStart(4)}    ${fakeMac(p.dev)}    ${sticky ? "STATIC " : "DYNAMIC"}     ${shortIf(n)}`);
+function devMac(net, dn, ifn) {
+  const o = net.devs[dn];
+  if (isHost(o)) return fakeMac(dn, 0);
+  const base = ifn ? ifn.split(".")[0] : "";
+  const idx = o.ifOrder.indexOf(base);
+  return fakeMac(dn, idx >= 0 ? idx : 0);
+}
+
+// Which VLANs an up physical switch port carries, mapped by wire tag ("u" or vlan id).
+function switchPortTags(net, dn, ifn) {
+  const d = net.devs[dn], st = net.st, m = new Map();
+  const lp = st.logical(dn, ifn), sw = d.ifaces[lp] && d.ifaces[lp].sw;
+  if (!sw) return m;
+  if (st.trunking(dn, lp)) {
+    for (const v of Object.keys(d.vlans).map(Number)) {
+      if (sw.allowed && !sw.allowed.includes(v)) continue;
+      m.set(v === sw.native ? "u" : v, v);
+    }
+  } else if (d.vlans[sw.accessVlan]) {
+    m.set("u", sw.accessVlan);
   }
+  return m;
+}
+
+function showMac(s, filter = {}) {
+  const d = s.dev, net = s.net, st = net.st;
+  const rows = [];
+  const seen = new Set();
+  const vlans = Object.keys(d.vlans).map(Number).sort((a, b) => a - b)
+    .filter(v => filter.vlan == null || v === filter.vlan);
+
+  const stpFwd = (swName, v, ifn) => {
+    const lp = st.logical(swName, ifn);
+    const tree = st.stp[swName] && st.stp[swName][v];
+    const p = tree && tree.ports[lp];
+    return !p || p.state === "FWD";
+  };
+
+  for (const v of vlans) {
+    // Explore outward from each active forwarding port of `d` in VLAN `v`.
+    for (const n of d.ifOrder) {
+      const i = d.ifaces[n];
+      if (!i.sw || ifKind(n) !== "phys" || !st.status(d.name, n).up) continue;
+      if (!stpFwd(d.name, v, n)) continue;
+      const tags = switchPortTags(net, d.name, n);
+      let myTag = null;
+      for (const [t, vid] of tags) if (vid === v) { myTag = t; break; }
+      if (myTag === null) continue;
+      const p = net.peer(d.name, n);
+      if (!p || !st.status(p.dev, p.ifn).up) continue;
+      const outPort = st.logical(d.name, n);
+      const sticky = i.sw.ps.on && i.sw.ps.sticky;
+      const addEntry = (mac, type) => {
+        if (filter.dynamic && type !== "DYNAMIC") return;
+        const key = `${v}|${mac}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        rows.push({ v, mac, type, port: shortIf(outPort) });
+      };
+
+      const peerDev = net.devs[p.dev];
+      if (peerDev.kind !== "switch" || !peerDev.ifaces[p.ifn]?.sw) {
+        // Host, router (physical or dot1q subinterface), or routed switch port
+        let matches = false;
+        if (isHost(peerDev) || peerDev.kind === "switch") matches = myTag === "u";
+        else if (peerDev.kind === "router") {
+          if (myTag === "u") {
+            const hasNativeSub = peerDev.ifOrder.some(sn => sn.startsWith(p.ifn + ".") && peerDev.ifaces[sn].dot1qNative && !peerDev.ifaces[sn].shutdown);
+            matches = peerDev.ifaces[p.ifn].ip != null || hasNativeSub || !st.trunking(d.name, outPort);
+          } else {
+            matches = peerDev.ifOrder.some(sn => sn.startsWith(p.ifn + ".") && peerDev.ifaces[sn].dot1q === myTag && !peerDev.ifaces[sn].shutdown);
+          }
+        }
+        if (matches) addEntry(devMac(net, p.dev, p.ifn), sticky ? "STATIC " : "DYNAMIC");
+        continue;
+      }
+
+      // BFS through peer switches carrying this VLAN
+      const peerTags = switchPortTags(net, p.dev, p.ifn);
+      const peerVlan = peerTags.get(myTag);
+      if (peerVlan == null || !stpFwd(p.dev, peerVlan, p.ifn)) continue;
+      const visited = new Set([`${d.name}#${v}`, `${p.dev}#${peerVlan}`]);
+      const q = [{ sw: p.dev, vid: peerVlan }];
+      while (q.length) {
+        const cur = q.shift();
+        const sd = net.devs[cur.sw];
+        // SVI on a remote switch is also a reachable MAC in that VLAN
+        const svi = sd.ifaces[`Vlan${cur.vid}`];
+        if (svi && svi.ip != null && st.status(cur.sw, svi.name).up) {
+          addEntry(devMac(net, cur.sw, svi.name), "DYNAMIC");
+        }
+        for (const fn of sd.ifOrder) {
+          const fi = sd.ifaces[fn];
+          if (!fi.sw || ifKind(fn) !== "phys" || !st.status(cur.sw, fn).up) continue;
+          if (!stpFwd(cur.sw, cur.vid, fn)) continue;
+          const ft = switchPortTags(net, cur.sw, fn);
+          let ftag = null;
+          for (const [t, vid] of ft) if (vid === cur.vid) { ftag = t; break; }
+          if (ftag === null) continue;
+          const fp = net.peer(cur.sw, fn);
+          if (!fp || !st.status(fp.dev, fp.ifn).up) continue;
+          const fd = net.devs[fp.dev];
+          if (fd.kind !== "switch" || !fd.ifaces[fp.ifn]?.sw) {
+            let ok = false;
+            if (isHost(fd) || fd.kind === "switch") ok = ftag === "u";
+            else if (fd.kind === "router") {
+              if (ftag === "u") {
+                const hasNativeSub = fd.ifOrder.some(sn => sn.startsWith(fp.ifn + ".") && fd.ifaces[sn].dot1qNative && !fd.ifaces[sn].shutdown);
+                ok = fd.ifaces[fp.ifn].ip != null || hasNativeSub || !st.trunking(cur.sw, st.logical(cur.sw, fn));
+              } else {
+                ok = fd.ifOrder.some(sn => sn.startsWith(fp.ifn + ".") && fd.ifaces[sn].dot1q === ftag && !fd.ifaces[sn].shutdown);
+              }
+            }
+            if (ok) addEntry(devMac(net, fp.dev, fp.ifn), "DYNAMIC");
+          } else {
+            const nt = switchPortTags(net, fp.dev, fp.ifn);
+            const nv = nt.get(ftag);
+            if (nv == null || !stpFwd(fp.dev, nv, fp.ifn)) continue;
+            const vk = `${fp.dev}#${nv}`;
+            if (!visited.has(vk)) { visited.add(vk); q.push({ sw: fp.dev, vid: nv }); }
+          }
+        }
+      }
+    }
+  }
+
+  const out = ["          Mac Address Table", "-------------------------------------------", "", "Vlan    Mac Address       Type        Ports", "----    -----------       --------    -----"];
+  for (const r of rows) out.push(`${String(r.v).padStart(4)}    ${r.mac}    ${r.type}     ${r.port}`);
   return out.join("\n");
 }
 
-function showCdp(s) {
+function neighborIps(net, devName, remoteIf) {
+  const o = net.devs[devName], st = net.st;
+  const ips = [];
+  if (o.ifaces[remoteIf] && o.ifaces[remoteIf].ip != null && st.status(devName, remoteIf).up) {
+    ips.push(intToIp(o.ifaces[remoteIf].ip));
+  } else if (o.kind === "router") {
+    for (const sn of o.ifOrder) {
+      if (sn.startsWith(remoteIf + ".") && o.ifaces[sn].ip != null && st.status(devName, sn).up) ips.push(intToIp(o.ifaces[sn].ip));
+    }
+  } else if (o.kind === "switch") {
+    for (const i of st.l3[devName] || []) ips.push(intToIp(i.ip));
+  }
+  return ips;
+}
+
+function neighborEntries(s, proto) {
   const d = s.dev;
-  const out = ["Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge", "                  S - Switch, H - Host, I - IGMP, r - Repeater, P - Phone", "", "Device ID    Local Intrfce   Holdtme    Capability   Platform    Port ID"];
+  if (proto === "cdp" && d.misc.includes("no cdp run")) return { disabled: true, rows: [] };
+  if (proto === "lldp" && !d.misc.includes("lldp run")) return { disabled: true, rows: [] };
+  const rows = [];
   for (const n of d.ifOrder) {
     if (ifKind(n) !== "phys" || !s.net.st.status(d.name, n).up) continue;
     const p = s.net.peer(d.name, n);
     if (!p) continue;
     const o = s.net.devs[p.dev];
-    if (isHost(o) || o.misc.includes("no cdp run") || d.misc.includes("no cdp run")) continue;
-    const sh = x => shortIf(x).replace(/^([A-Za-z]+)/, (m) => ({ Fa: "Fas ", Gi: "Gig ", Se: "Ser " }[m] || m));
-    out.push(`${pad(o.hostname, 12)} ${pad(sh(n), 15)} ${pad(120 + (n.length % 50), 10)} ${pad(o.kind === "router" ? "R" : "S", 12)} ${pad(o.kind === "router" ? "ISR4321" : "2960", 11)} ${sh(p.ifn)}`);
+    if (isHost(o)) continue;
+    if (proto === "cdp" && o.misc.includes("no cdp run")) continue;
+    if (proto === "lldp" && !o.misc.includes("lldp run")) continue;
+    rows.push({
+      dev: o, localIf: n, remoteIf: p.ifn,
+      ips: neighborIps(s.net, p.dev, p.ifn),
+      hold: 120 + (n.length % 50),
+    });
   }
+  return { disabled: false, rows };
+}
+
+function showCdp(s, detail = false) {
+  const { disabled, rows } = neighborEntries(s, "cdp");
+  if (disabled) return "% CDP is not enabled";
+  const sh = x => shortIf(x).replace(/^([A-Za-z]+)/, m => ({ Fa: "Fas ", Gi: "Gig ", Se: "Ser " }[m] || m));
+  if (!detail) {
+    const out = ["Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge", "                  S - Switch, H - Host, I - IGMP, r - Repeater, P - Phone", "", "Device ID    Local Intrfce   Holdtme    Capability   Platform    Port ID"];
+    for (const r of rows) {
+      const o = r.dev;
+      out.push(`${pad(o.hostname, 12)} ${pad(sh(r.localIf), 15)} ${pad(r.hold, 10)} ${pad(o.kind === "router" ? "R" : "S", 12)} ${pad(o.kind === "router" ? "ISR4321" : "2960", 11)} ${sh(r.remoteIf)}`);
+    }
+    return out.join("\n");
+  }
+  if (!rows.length) return "";
+  const out = [];
+  for (const r of rows) {
+    const o = r.dev, isR = o.kind === "router";
+    out.push("-------------------------", `Device ID: ${o.hostname}`, "Entry address(es):");
+    for (const ip of r.ips) out.push(`  IP address: ${ip}`);
+    out.push(`Platform: ${isR ? "cisco ISR4321/K9" : "cisco WS-C2960-8TC-L"},  Capabilities: ${isR ? "Router" : "Switch IGMP"}`);
+    out.push(`Interface: ${r.localIf},  Port ID (outgoing port): ${r.remoteIf}`);
+    out.push(`Holdtime : ${r.hold} sec`, "", "Version :",
+      `Cisco IOS Software, ${isR ? "ISR4300 Software (X86_64_LINUX_IOSD-UNIVERSALK9-M)" : "C2960 Software (C2960-LANBASEK9-M)"}, Version 15.2(4)E, RELEASE SOFTWARE (fc2)`);
+  }
+  return out.join("\n");
+}
+
+function showLldp(s, detail = false) {
+  const { disabled, rows } = neighborEntries(s, "lldp");
+  if (disabled) return "% LLDP is not enabled";
+  if (!detail) {
+    const out = [
+      "Capability codes:",
+      "    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device",
+      "    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other", "",
+      "Device ID           Local Intf     Hold-time  Capability      Port ID",
+    ];
+    for (const r of rows) {
+      const o = r.dev;
+      out.push(`${pad(o.hostname, 19)} ${pad(shortIf(r.localIf), 14)} ${pad(120, 10)} ${pad(o.kind === "router" ? "R" : "B", 15)} ${shortIf(r.remoteIf)}`);
+    }
+    out.push("", `Total entries displayed: ${rows.length}`);
+    return out.join("\n");
+  }
+  if (!rows.length) return "Total entries displayed: 0";
+  const out = [];
+  for (const r of rows) {
+    const o = r.dev, isR = o.kind === "router";
+    out.push("------------------------------------------------",
+      `Local Intf: ${shortIf(r.localIf)}`,
+      `Chassis id: ${fakeMac(o.name, 99)}`,
+      `Port id: ${shortIf(r.remoteIf)}`,
+      `Port Description: ${r.remoteIf}`,
+      `System Name: ${o.hostname}`, "",
+      "System Description:",
+      `Cisco IOS Software, ${isR ? "ISR4300" : "C2960"} Software, Version 15.2(4)E`, "",
+      "Time remaining: 112 seconds",
+      `System Capabilities: ${isR ? "B,R" : "B"}`,
+      `Enabled Capabilities: ${isR ? "R" : "B"}`,
+      "Management Addresses:",
+      ...(r.ips.length ? r.ips.map(ip => `    IP: ${ip}`) : ["    - not advertised -"]), "");
+  }
+  out.push(`Total entries displayed: ${rows.length}`);
   return out.join("\n");
 }
 
@@ -715,9 +929,37 @@ function showEtherchannel(s) {
 }
 
 function showArp(s) {
-  const d = s.dev, st = s.net.st;
+  const d = s.dev, net = s.net, st = net.st;
   const out = ["Protocol  Address          Age (min)  Hardware Addr   Type   Interface"];
-  for (const i of st.l3[d.name]) out.push(`Internet  ${pad(intToIp(i.ip), 16)} ${pad("-", 10)} ${fakeMac(d.name, d.ifOrder.indexOf(i.name))}  ARPA   ${i.name}`);
+  const seen = new Set();
+  for (const i of st.l3[d.name]) {
+    if (ifKind(i.name) === "loop" || i.name.startsWith("Serial")) continue;
+    const ownKey = `${i.name}|${i.ip}`;
+    seen.add(ownKey);
+    out.push(`Internet  ${pad(intToIp(i.ip), 16)} ${pad("-", 10)} ${devMac(net, d.name, i.name)}  ARPA   ${i.name}`);
+    const root = st.find(i.key);
+    for (const on of net.order) {
+      if (on === d.name) continue;
+      if (isHost(net.devs[on])) {
+        const c = st.pcs[on];
+        if (c.ip == null || !st.status(on, "eth0").up) continue;
+        if (st.find(`${on}|eth0`) !== root || ((c.ip ^ i.ip) & i.mask) !== 0) continue;
+        const k = `${i.name}|${c.ip}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push(`Internet  ${pad(intToIp(c.ip), 16)} ${pad(1 + ((c.ip & 15) % 9), 10)} ${devMac(net, on, "eth0")}  ARPA   ${i.name}`);
+      } else {
+        for (const oi of st.l3[on] || []) {
+          if (ifKind(oi.name) === "loop" || oi.name.startsWith("Serial")) continue;
+          if (st.find(oi.key) !== root || ((oi.ip ^ i.ip) & i.mask) !== 0) continue;
+          const k = `${i.name}|${oi.ip}`;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          out.push(`Internet  ${pad(intToIp(oi.ip), 16)} ${pad(2 + ((oi.ip & 15) % 9), 10)} ${devMac(net, on, oi.name)}  ARPA   ${i.name}`);
+        }
+      }
+    }
+  }
   return out.join("\n");
 }
 
@@ -1095,9 +1337,14 @@ show("ip nat translations", showNat, ["router"]);
 show("ip nat statistics", s => `Total active translations: ${s.dev.natLog.length + s.dev.natRules.filter(r => r.type === "static").length}\nOutside interfaces:\n  ${s.dev.ifOrder.filter(n => s.dev.ifaces[n].nat === "outside").join(", ")}\nInside interfaces:\n  ${s.dev.ifOrder.filter(n => s.dev.ifaces[n].nat === "inside").join(", ")}`, ["router"]);
 show("ip dhcp binding", showDhcpBinding, ["router"]);
 show("ip dhcp pool", showDhcpPool, ["router"]);
-show("mac address-table", showMac, ["switch"]);
-show("mac-address-table", showMac, ["switch"]);
-show("cdp neighbors", showCdp);
+show("mac address-table", s => showMac(s), ["switch"]);
+show("mac address-table dynamic", s => showMac(s, { dynamic: true }), ["switch"]);
+show("mac address-table vlan <num>", (s, v) => showMac(s, { vlan: v }), ["switch"]);
+show("mac-address-table", s => showMac(s), ["switch"]);
+show("cdp neighbors", s => showCdp(s, false));
+show("cdp neighbors detail", s => showCdp(s, true));
+show("lldp neighbors", s => showLldp(s, false));
+show("lldp neighbors detail", s => showLldp(s, true));
 show("version", showVersion);
 show("port-security", s => showPortSec(s), ["switch"]);
 show("port-security interface <if>", showPortSec, ["switch"]);

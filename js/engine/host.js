@@ -1,7 +1,7 @@
 // A Windows-style command prompt for simulated PCs and servers.
 
-import { ipToInt, intToIp } from "./ip.js";
-import { fakeMac } from "./network.js";
+import { ipToInt, intToIp, bcastOf } from "./ip.js";
+import { fakeMac, isHost, ifKind } from "./network.js";
 import { IosSession, remoteAccess, checkLogin, traceHops } from "./ios.js";
 import { runAdhoc, runPlaybook } from "./ansible.js";
 
@@ -26,6 +26,7 @@ function splitArgs(text) {
 
 const HELP = [
   "ipconfig [/all | /renew | /release]   Show or refresh this PC's IP settings",
+  "arp -a                                Show this PC's ARP cache (local IP to MAC table)",
   "ping <ip>                             Test reachability",
   "tracert <ip>                          Show the routers on the path",
   "ssh -l <user> <ip>                    Open an SSH session to a device",
@@ -35,6 +36,9 @@ const HELP = [
   "",
   "Set a static address or switch to DHCP with the IP settings bar above this window.",
 ].join("\n");
+
+// Format a Cisco dotted MAC ("00ab.cdef.1200") as Windows hyphenated ("00-ab-cd-ef-12-00").
+const winMac = mac => mac.replace(/\./g, "").match(/../g).join("-");
 
 
 // Apply IP settings to a host. Strings or integers are accepted.
@@ -166,7 +170,7 @@ const COMMANDS = {
     if (!up) { out.push("   Media State . . . . . . . . . . . : Media disconnected"); return out.join("\n"); }
     const v = x => (x != null ? intToIp(x) : "");
     if (opt === "/all") {
-      out.push(`   Physical Address. . . . . . . . . : ${fakeMac(d.name).toUpperCase()}`);
+      out.push(`   Physical Address. . . . . . . . . : ${winMac(fakeMac(d.name)).toUpperCase()}`);
       out.push(`   DHCP Enabled. . . . . . . . . . . : ${d.ipcfg.mode === "dhcp" ? "Yes" : "No"}`);
     }
     if (c.via === "apipa") out.push(`   Autoconfiguration IPv4 Address. . : ${v(c.ip)}`);
@@ -183,6 +187,55 @@ const COMMANDS = {
     }
     if (c.via === "apipa") out.push("", "   (No DHCP server answered, so Windows assigned itself a 169.254.x.x address.)");
     return out.join("\n");
+  },
+
+  arp(s, args) {
+    const opt = (args[0] || "").toLowerCase();
+    if (opt !== "-a" && opt !== "/a") {
+      return "Displays the ARP cache (IPv4 to MAC mappings on the local subnet).\n\n  ARP -a   Displays current ARP entries.";
+    }
+    const net = s.net, d = s.dev, st = net.st;
+    const c = st.pcs[d.name];
+    if (!st.status(d.name, "eth0").up || c.ip == null) return "No ARP Entries Found.";
+    const root = st.find(`${d.name}|eth0`);
+    const rows = [];
+    const seen = new Set();
+    const pad = (x, n) => String(x).padEnd(n);
+    const add = (ip, mac, type) => {
+      const k = `${ip}|${type}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      rows.push(`  ${pad(intToIp(ip), 22)}${pad(mac, 22)}${type}`);
+    };
+    for (const on of net.order) {
+      if (on === d.name) continue;
+      if (isHost(net.devs[on])) {
+        const oc = st.pcs[on];
+        if (oc.ip == null || !st.status(on, "eth0").up) continue;
+        if (st.find(`${on}|eth0`) === root && ((oc.ip ^ c.ip) & c.mask) === 0) {
+          add(oc.ip, winMac(fakeMac(on, 0)), "dynamic");
+        }
+      } else {
+        const od = net.devs[on];
+        for (const i of st.l3[on] || []) {
+          if (ifKind(i.name) === "loop" || i.name.startsWith("Serial")) continue;
+          if (st.find(i.key) === root && ((i.ip ^ c.ip) & c.mask) === 0) {
+            const idx = od.ifOrder.indexOf(i.name.split(".")[0]);
+            add(i.ip, winMac(fakeMac(on, idx >= 0 ? idx : 0)), "dynamic");
+          }
+        }
+      }
+    }
+    if (c.mask != null && c.mask !== 0xffffffff) {
+      add(bcastOf(c.ip, c.mask), "ff-ff-ff-ff-ff-ff", "static");
+    }
+    add(0xffffffff, "ff-ff-ff-ff-ff-ff", "static");
+    return [
+      "",
+      `Interface: ${intToIp(c.ip)} --- 0x2`,
+      `  ${pad("Internet Address", 22)}${pad("Physical Address", 22)}Type`,
+      ...rows,
+    ].join("\n");
   },
 
   ping(s, args) {

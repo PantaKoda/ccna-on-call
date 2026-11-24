@@ -22,7 +22,7 @@ for (const level of LEVELS) {
   if (before.every(o => o.done)) problems.push("all objectives are already complete before the player does anything");
   const transcript = [];
   for (const step of level.solution) {
-    if (step.pc) { lab.runStep(step); continue; }
+    if (step.pc || step.answer) { lab.runStep(step); continue; }
     for (const c of step.cmds) {
       const s = lab.session(step.on);
       const prompt = s.prompt;
@@ -59,7 +59,7 @@ if (!only || only === "practice") {
       subjects.add(JSON.stringify(level.details));
       if (lab.progress().every(o => o.done)) problems.push(`seed ${seed}: nothing to do at the start`);
       for (const step of level.solution) {
-        if (step.pc) { lab.runStep(step); continue; }
+        if (step.pc || step.answer) { lab.runStep(step); continue; }
         for (const c of step.cmds) {
           const out = lab.exec(step.on, c);
           if (/% (Invalid|Incomplete|Ambiguous|Unknown)/.test(out)) problems.push(`seed ${seed}: "${c}" rejected on ${step.on}`);

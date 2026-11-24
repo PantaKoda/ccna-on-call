@@ -84,7 +84,7 @@ export class Topology {
       const d = net.devs[dn];
       const label = isHost(d) ? d.name : d.hostname;
       let sub = d.note || "";
-      if (isHost(d)) {
+      if (isHost(d) && !net.hideHostIps) {
         const c = st.pcs[dn];
         sub = c.ip != null ? intToIp(c.ip) + (c.via === "dhcp" ? " (DHCP)" : c.via === "apipa" ? " (no DHCP)" : "") : d.ipcfg.mode === "dhcp" ? "DHCP: no lease" : "no address";
       }

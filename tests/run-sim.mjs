@@ -251,5 +251,51 @@ const ospfLab = () => new Lab({
   run(lab, "DSW", cfg("no ip routing"));
   ok("no ip routing stops the routing again", !st().reach("PA", B).ok);
 }
+
+// ---- discovery & inspection: CDP detail, LLDP, ARP, multi-switch MAC table, speed negotiation, PC arp -a, Field Report
+{
+  const lab = new Lab({
+    id: "t-disc", topology: {
+      devices: [
+        { name: "R1", kind: "router", hostname: "CORE-R1", config: ["lldp run", "interface g0/0", "ip address 192.168.10.1 255.255.255.0", "no shutdown", "interface g0/1", "ip address 10.0.99.1 255.255.255.0", "no shutdown"] },
+        { name: "SW1", kind: "switch", hostname: "ACC-SW1", config: ["lldp run", "interface vlan 1", "ip address 192.168.10.2 255.255.255.0", "no shutdown"] },
+        { name: "SW2", kind: "switch", hostname: "ACC-SW2" },
+        { name: "PC1", kind: "pc", ip: { mode: "static", ip: "192.168.10.11", mask: "255.255.255.0", gw: "192.168.10.1" } },
+        { name: "PC2", kind: "pc", ip: { mode: "static", ip: "192.168.10.12", mask: "255.255.255.0", gw: "192.168.10.1" } },
+        { name: "SRV", kind: "server", ip: { mode: "static", ip: "10.0.99.50", mask: "255.255.255.0", gw: "10.0.99.1" } },
+      ],
+      links: ["R1:g0/0 SW1:fa0/1", "SW1:g0/1 SW2:g0/1", "SW1:fa0/2 PC1", "SW2:fa0/2 PC2", "R1:g0/1 SRV"],
+    },
+    report: [
+      { id: "r-if", kind: "if", answer: "GigabitEthernet0/1" },
+      { id: "r-cidr", kind: "cidr", answer: "192.168.10.0/24" },
+      { id: "r-ip", kind: "ip", answer: "192.168.10.2" },
+      { id: "r-num", kind: "num", answer: 4 },
+      { id: "r-ch", kind: "choice", options: ["A", "B"], answer: 1 },
+    ],
+    objectives: [],
+  });
+  const cdpDet = run(lab, "R1", ["show cdp neighbors detail"]);
+  ok("show cdp neighbors detail reports neighbour IP and ports", /Device ID: ACC-SW1/.test(cdpDet) && /IP address: 192\.168\.10\.2/.test(cdpDet) && /Port ID \(outgoing port\): FastEthernet0\/1/.test(cdpDet), cdpDet);
+  const lldp1 = run(lab, "R1", ["show lldp neighbors"]);
+  ok("show lldp neighbors lists LLDP-enabled neighbour", /ACC-SW1\s+Gi0\/0\s+120\s+B\s+Fa0\/1/.test(lldp1), lldp1);
+  const lldpDet = run(lab, "R1", ["show lldp neighbors detail"]);
+  ok("show lldp neighbors detail includes management IP", /System Name: ACC-SW1/.test(lldpDet) && /IP: 192\.168\.10\.2/.test(lldpDet), lldpDet);
+  ok("show lldp neighbors reports disabled when lldp run is off", /LLDP is not enabled/.test(run(lab, "SW2", ["show lldp neighbors"])));
+  const r1If = run(lab, "R1", ["show interfaces g0/0"]);
+  ok("Gigabit wired to FastEthernet negotiates 100Mb/s", /Full-duplex, 100Mb\/s/.test(r1If), r1If);
+  const sw1Stat = run(lab, "SW1", ["show interfaces status"]);
+  ok("show interfaces status shows a-100 on Fa0/1 and a-1000 on Gi0/1", /Fa0\/1\s+connected\s+1\s+a-full\s+a-100/.test(sw1Stat) && /Gi0\/1\s+connected\s+1\s+a-full\s+a-1000/.test(sw1Stat), sw1Stat);
+  const r1Mac = /address is ([0-9a-f.]+)/.exec(r1If)?.[1];
+  const sw1Mac = run(lab, "SW1", ["show mac address-table"]);
+  const pc2Mac = /Physical Address[^:]+:\s*([0-9A-F-]+)/.exec(run(lab, "PC2", ["ipconfig /all"]))?.[1].toLowerCase().replace(/-/g, "").replace(/(....)(....)(....)/, "$1.$2.$3");
+  ok("switch MAC table matches router interface MAC and learns PC2 behind SW2", r1Mac && sw1Mac.includes(r1Mac) && pc2Mac && new RegExp(pc2Mac.replace(/\./g, "\\.") + "\\s+DYNAMIC\\s+Gi0/1").test(sw1Mac), sw1Mac);
+  const r1Arp = run(lab, "R1", ["show ip arp"]);
+  ok("router show ip arp lists local hosts and SVI on the connected segment", /192\.168\.10\.11/.test(r1Arp) && /192\.168\.10\.12/.test(r1Arp) && /192\.168\.10\.2/.test(r1Arp) && /10\.0\.99\.50/.test(r1Arp), r1Arp);
+  const pcArp = run(lab, "PC1", ["arp -a"]);
+  ok("PC arp -a shows local peers, gateway and broadcast, but not remote subnets", /192\.168\.10\.1\b/.test(pcArp) && /192\.168\.10\.12\b/.test(pcArp) && /192\.168\.10\.255/.test(pcArp) && /ff-ff-ff-ff-ff-ff/.test(pcArp) && !/10\.0\.99\.50/.test(pcArp), pcArp);
+  ok("Field Report accepts normalized interface, CIDR, IP, number and choice",
+    lab.submitAnswer("r-if", "gi0/1").ok && lab.submitAnswer("r-cidr", "192.168.10.0 / 24").ok && lab.submitAnswer("r-ip", "192.168.10.2").ok && lab.submitAnswer("r-num", "4").ok && lab.submitAnswer("r-ch", 1).ok && !lab.submitAnswer("r-if", "fa0/1").ok);
+}
 console.log(fails ? `\n${fails} FAILED` : "\nall simulator checks pass");
 process.exit(fails ? 1 : 0);

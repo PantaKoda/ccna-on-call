@@ -4,6 +4,16 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+### Added
+
+- Three "forest-first" working-topology discovery labs in Tier 1 (right after *First Console* and before *Lock It Down*), each with random variants and an interactive Field Report inside the ticket:
+  - **Inside the LAN** (`l2-vs-l3`): explore a working switch, router, server and PCs to see Layer 2 MAC tables vs Layer 3 routing, Gigabit uplinks vs FastEthernet access ports, ARP (`arp -a` and `show ip arp`), and DHCP fallback to APIPA (`169.254.x.x`).
+  - **Map the Network** (`walk-the-wire`): survey a 7-device multi-router, multi-switch campus from the CLI using `show cdp neighbors detail`, `show lldp neighbors`, `show ip interface brief`, `show ip arp`, and `show mac address-table`.
+  - **Read the Subnets** (`read-the-subnets`): inspect a live 4-subnet VLSM topology (`/26`, `/27`, `/28`, `/30`) with `show ip route`, `ipconfig`, and `tracert` to map subnetworks, broadcast addresses, and router hops before moving on to configuration labs.
+- New simulator inspection commands: `show cdp neighbors detail`, `show lldp neighbors`, `show lldp neighbors detail`, `show mac address-table dynamic|vlan <id>`, and `arp -a` on PCs.
+- Enhanced `show ip arp` (now lists resolved hosts and neighbour routers on local segments), multi-switch `show mac address-table` learning with accurate router interface MACs, and FastEthernet-to-Gigabit speed auto-negotiation (`100Mb/s` / `a-100`).
+- Added a "Reading a live network" section to Network fundamentals theory, a "Network discovery and inspection" section to the Handbook, and six new fundamentals exam questions.
+
 ## [0.19.0] - 2026-11-22
 
 ### Added

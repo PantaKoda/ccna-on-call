@@ -220,6 +220,26 @@ a.card:hover { border-color: var(--accent); transform: translateY(-1px); }
 .objectives .check { flex: none; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line-2); margin-top: 1px; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: var(--accent-ink); }
 .objectives li.done { border-color: color-mix(in srgb, var(--green) 45%, transparent); background: color-mix(in srgb, var(--green) 8%, transparent); }
 .objectives li.done .check { background: var(--green); border-color: var(--green); }
+/* field report (environment discovery labs) */
+.report-lead { margin: -2px 0 8px; }
+.report-list { display: grid; gap: 8px; margin-bottom: 6px; }
+.report-item { border: 1px solid var(--line); border-radius: 9px; padding: 9px 10px; background: var(--tint); transition: border-color .15s, background .15s; }
+.report-item.ok { border-color: color-mix(in srgb, var(--green) 50%, transparent); background: color-mix(in srgb, var(--green) 8%, transparent); }
+.report-item.bad { border-color: color-mix(in srgb, var(--red) 45%, transparent); }
+.report-q { margin: 0 0 7px; font-size: 13.5px; line-height: 1.45; display: flex; gap: 6px; align-items: baseline; }
+.report-num { font: 700 12px var(--mono); color: var(--accent); flex: none; }
+.report-form { display: flex; gap: 6px; align-items: center; }
+.report-input { flex: 1; min-width: 0; font: 13px var(--mono); color: var(--text); background: var(--bg); border: 1px solid var(--line-2); border-radius: 6px; padding: 5px 8px; }
+.report-input:focus { outline: none; border-color: var(--accent); }
+.report-input:disabled { opacity: .7; }
+.report-choices { display: grid; gap: 5px; }
+.report-choice { text-align: left; font: 13px/1.35 var(--sans); color: var(--text); background: var(--bg); border: 1px solid var(--line-2); border-radius: 7px; padding: 6px 9px; cursor: pointer; transition: border-color .12s, background .12s; }
+.report-choice:hover:not(:disabled) { border-color: var(--accent); }
+.report-choice.correct { border-color: var(--green); background: color-mix(in srgb, var(--green) 14%, transparent); font-weight: 600; }
+.report-choice.wrong { border-color: var(--red); background: color-mix(in srgb, var(--red) 11%, transparent); }
+.report-choice:disabled { cursor: default; opacity: .75; }
+.report-choice.correct:disabled { opacity: 1; }
+.report-msg { margin: 6px 0 0; line-height: 1.4; }
 .hints { display: grid; gap: 8px; margin-bottom: 8px; }
 .bubble { border: 1px solid var(--line-2); border-left: 3px solid var(--gold); border-radius: 8px; padding: 8px 10px; font-size: 13.5px; background: color-mix(in srgb, var(--gold) 8%, transparent); }
 .bubble .who { display: block; font: 700 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--amber); margin-bottom: 2px; }

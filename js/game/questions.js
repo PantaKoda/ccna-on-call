@@ -741,6 +741,26 @@ const BY_TOPIC = [
   ["intervlan", 2, "Which two conditions must both hold before an SVI shows up/up?",
     ["Its VLAN exists in the VLAN database", "At least one port carrying that VLAN is up", "A router is connected to the switch", "The VLAN is the native VLAN of a trunk", "Port security is disabled"], [0, 1],
     "Besides not being shut down, an SVI needs its VLAN to exist and to be active on at least one port: an access port in the VLAN, or a trunk that allows it."],
+
+  // ---- reading live networks (L2/L3, ARP, discovery, port speeds)
+  ["fundamentals", 1, "Two laptops with static IPs 192.168.10.11/24 and 192.168.10.12/24 are connected to one Layer 2 switch with no router attached. Can they ping each other?",
+    ["Yes — they are in the same subnet, so the switch forwards frames between them using MAC addresses", "No — every IP network requires a router to forward pings", "No — a switch cannot forward frames until it has a default gateway", "Only if a routing protocol is enabled on the switch"], 0,
+    "A router is only needed to move packets between different subnets. Inside one subnet, hosts resolve each other's MAC addresses with ARP and the switch forwards the frames at Layer 2."],
+  ["fundamentals", 1, "A FastEthernet port (100 Mb/s) on a switch is connected with a straight-through cable to a GigabitEthernet port (1000 Mb/s) on a router, both using auto-negotiation. What happens?",
+    ["The link stays down because the port speeds differ", "The link comes up at 100 Mb/s (the highest speed both ends support)", "The link comes up at 1000 Mb/s", "The switch port goes err-disabled"], 1,
+    "Auto-negotiation selects the highest speed both sides support, so FastEthernet plus GigabitEthernet comes up at 100 Mb/s. On a switch with Gigabit uplinks, connecting the router to a Gigabit port avoids that bottleneck."],
+  ["fundamentals", 1, "Why does an ARP request frame use the destination MAC address <code>FFFF.FFFF.FFFF</code>?",
+    ["To reach the default gateway directly", "Because the sender does not yet know the target's MAC address and must broadcast the question to every host in the local subnet", "To ask the DNS server for the target's IP address", "Because switches drop all unicast ARP frames"], 1,
+    "<code>FFFF.FFFF.FFFF</code> is the Layer 2 broadcast address. The switch floods the ARP request out every port in the VLAN so the host that owns the target IP receives it and replies with its MAC address."],
+  ["fundamentals", 1, "Which IOS command displays a directly connected Cisco neighbour's IP address in addition to its hostname, platform and remote port?",
+    ["<code>show cdp neighbors</code>", "<code>show cdp neighbors detail</code>", "<code>show mac address-table</code>", "<code>show interfaces status</code>"], 1,
+    "<code>show cdp neighbors</code> shows the compact table (hostname, local/remote ports, platform), while <code>show cdp neighbors detail</code> adds the neighbour's Layer 3 IP address(es) and IOS version."],
+  ["fundamentals", 1, "You want to find which physical switch port a workstation is plugged into, knowing only its IP address. Which pair of commands on the gateway router and access switch gives you the answer?",
+    ["<code>show ip arp</code> on the router (IP to MAC), then <code>show mac address-table</code> on the switch (MAC to port)", "<code>show ip route</code> on the router, then <code>show version</code> on the switch", "<code>show cdp neighbors</code> on the router, then <code>show vlan brief</code> on the switch", "<code>show running-config</code> on both devices"], 0,
+    "The router's ARP table maps the host's IP address to its MAC address; the switch's MAC address table maps that MAC address to the exact physical switch port."],
+  ["fundamentals", 1, "A workstation set to obtain an IP automatically reports <code>169.254.12.44</code> with mask <code>255.255.0.0</code> and no default gateway in <code>ipconfig /all</code>. What happened?",
+    ["It received a private lease from a misconfigured router", "No DHCP server answered, so the host assigned itself an APIPA address", "Its Ethernet cable is unplugged", "It is using an IPv6 link-local address"], 1,
+    "<code>169.254.0.0/16</code> is APIPA (Automatic Private IP Addressing). A DHCP client falls back to it when no DHCP server responds."],
 ];
 
 // Built-in questions on subjects that are in the v1.1 blueprint but not in v2.0.

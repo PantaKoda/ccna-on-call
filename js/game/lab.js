@@ -16,13 +16,55 @@ function endpoint(net, text) {
   return [dev, ifn];
 }
 
+function checkReportAnswer(q, raw) {
+  if (raw == null) return false;
+  const kind = q.kind || "text";
+  if (kind === "choice") {
+    const idx = typeof raw === "number" ? raw : /^\d+$/.test(String(raw).trim()) ? Number(String(raw).trim()) : -1;
+    if (typeof q.answer === "number") {
+      if (idx === q.answer) return true;
+      return String(raw).trim().toLowerCase() === String(q.options[q.answer]).trim().toLowerCase();
+    }
+    return String(raw).trim().toLowerCase() === String(q.answer).trim().toLowerCase();
+  }
+  const s = String(raw).trim();
+  if (!s) return false;
+  const accepted = Array.isArray(q.answer) ? q.answer : [q.answer];
+  return accepted.some(exp => {
+    if (kind === "if") {
+      const a = normIf(s), b = normIf(exp);
+      return a != null && b != null && a === b;
+    }
+    if (kind === "ip") {
+      const a = ipToInt(s), b = ipToInt(exp);
+      return a !== null && b !== null && a === b;
+    }
+    if (kind === "cidr") {
+      const norm = v => {
+        const m = /^([\d.]+)\s*\/\s*(\d{1,2})$/.exec(String(v).trim());
+        if (!m) return null;
+        const n = ipToInt(m[1]), len = Number(m[2]);
+        return n !== null && len >= 0 && len <= 32 ? `${n}/${len}` : null;
+      };
+      const a = norm(s), b = norm(exp);
+      return a !== null && b !== null && a === b;
+    }
+    if (kind === "num") {
+      return /^-?\d+$/.test(s) && Number(s) === Number(exp);
+    }
+    return s.toLowerCase() === String(exp).trim().toLowerCase();
+  });
+}
+
 export class Lab {
   constructor(level) {
     this.level = level;
     this.net = new Net();
+    this.net.hideHostIps = !!level.topology.hideHostIps;
     this.sessions = {};
     this.seen = new Set();      // "mode:SW1:priv" style facts about what the player has done
     this.cmdLog = {};           // device -> commands typed
+    this.answers = {};          // report question id -> { value, ok, attempts }
     this.commands = 0;
     const errors = [];
     const topo = level.topology;
@@ -88,9 +130,20 @@ export class Lab {
     d.files[name] = String(content).replace(/\r\n/g, "\n");
   }
 
-  // one step of a scripted solution: commands, PC IP settings or a file edit
+  // Submit an answer to a Field Report question on a discovery/inspection lab.
+  submitAnswer(id, rawValue) {
+    const q = (this.level.report || []).find(r => r.id === id);
+    if (!q) throw new Error(`Unknown report question "${id}"`);
+    const ok = checkReportAnswer(q, rawValue);
+    const prev = this.answers[id];
+    this.answers[id] = { value: rawValue, ok, attempts: (prev ? prev.attempts : 0) + 1 };
+    return { ok, explain: q.explain || "", hint: q.hint || "" };
+  }
+
+  // one step of a scripted solution: commands, PC IP settings, a file edit, or report answers
   runStep(step) {
-    if (step.file) this.setFile(step.pc, step.file, step.content);
+    if (step.answer) for (const [id, val] of Object.entries(step.answer)) this.submitAnswer(id, val);
+    else if (step.file) this.setFile(step.pc, step.file, step.content);
     else if (step.pc) this.setHostIp(step.pc, step.ip);
     else for (const c of step.cmds) this.exec(step.on, c);
   }

@@ -11,6 +11,9 @@ export const C = {
   // --- player actions
   reachedMode: (dev, mode) => (net, lab) => lab.seen.has(`mode:${dev}:${mode}`),
   ran: (dev, re) => (net, lab) => (lab.cmdLog[dev] || []).some(c => re.test(c)),
+  ranAny: (devs, re) => (net, lab) => devs.some(dev => (lab.cmdLog[dev] || []).some(c => re.test(c))),
+  answered: id => (net, lab) => !!(lab.answers[id] && lab.answers[id].ok),
+  reportComplete: () => (net, lab) => (lab.level.report || []).length > 0 && (lab.level.report || []).every(q => lab.answers[q.id] && lab.answers[q.id].ok),
 
   // --- device basics
   hostname: (dev, name) => net => net.devs[dev].hostname === name,

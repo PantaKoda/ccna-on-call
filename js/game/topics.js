@@ -104,7 +104,7 @@ export const topicOnly = t => (t.v2 === null ? "v1" : t.v1 === null ? "v2" : nul
 
 // Which topic each story lab teaches.
 export const LEVEL_TOPIC = {
-  "first-console": "cli", "lock-it-down": "cli",
+  "first-console": "cli", "l2-vs-l3": "fundamentals", "walk-the-wire": "fundamentals", "read-the-subnets": "subnetting", "lock-it-down": "cli",
   "subnet-sprint-1": "subnetting", "subnet-sprint-2": "subnetting", "vlsm-plan": "subnetting",
   "ipv6-sprint": "ipv6", "route-lookup": "routing", "acl-trace": "acl",
   "desk-move": "addressing", "switch-mgmt": "addressing",

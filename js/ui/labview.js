@@ -21,6 +21,7 @@ export function mountLab(root, level, { onDone, actions = [], note = null, badge
 
   // ---- ticket window
   const objList = h("ul", { class: "objectives" });
+  const reportBox = h("div", { class: "report-list" });
   const hintBox = h("div", { class: "hints" });
   const hintBtn = h("button", { class: "btn small", onclick: askHint });
   const closeBtn = h("button", { class: "btn primary block", hidden: true, onclick: finish }, "Close ticket");
@@ -35,11 +36,78 @@ export function mountLab(root, level, { onDone, actions = [], note = null, badge
     note && h("p", { class: "muted small ticket-note" }, note),
     level.brief.map(p => h("p", { html: rich(p) })),
     level.details && h("table", { class: "details" }, h("tbody", {}, level.details.map(([k, v]) => h("tr", {}, h("th", { scope: "row" }, k), h("td", {}, v))))),
+    level.report && level.report.length ? [
+      h("h3", {}, "Field Report"),
+      h("p", { class: "muted small report-lead" }, "Use the device consoles on the right to investigate the live network, then record your findings here."),
+      reportBox,
+    ] : null,
     h("h3", {}, "Objectives"), objList, closeBtn,
     h("h3", {}, "Need a hand?"),
     h("p", { class: "muted small" }, "Each hint costs one star. Type ? in a console for free, context-sensitive help."),
     hintBox, hintBtn,
     level.skills && h("p", { class: "skills muted small" }, "Skills: ", level.skills.join(" · ")));
+
+  // ---- interactive Field Report (for environment-discovery labs)
+  function buildReport() {
+    if (!level.report || !level.report.length) return;
+    reportBox.replaceChildren(...level.report.map((q, idx) => {
+      const card = h("div", { class: "report-item", "data-id": q.id });
+      const msg = h("p", { class: "report-msg small", role: "status", hidden: true });
+      const label = h("p", { class: "report-q" }, h("span", { class: "report-num" }, `${idx + 1}.`), h("span", { html: rich(q.prompt) }));
+      const applyVerdict = res => {
+        card.classList.toggle("ok", res.ok);
+        card.classList.toggle("bad", !res.ok);
+        msg.hidden = false;
+        if (res.ok) {
+          msg.className = "report-msg small ok-text";
+          msg.innerHTML = rich(res.explain ? `✓ Correct. ${res.explain}` : "✓ Recorded.");
+        } else {
+          msg.className = "report-msg small bad-text";
+          msg.innerHTML = rich(res.hint ? `Not quite. ${res.hint}` : "Not quite — check the live console output and try again.");
+        }
+        refresh();
+      };
+      if (q.kind === "choice") {
+        const opts = h("div", { class: "report-choices" });
+        const btns = q.options.map((opt, oi) => {
+          const b = h("button", { type: "button", class: "report-choice" }, h("span", { html: rich(opt) }));
+          b.onclick = () => {
+            if (lab.answers[q.id]?.ok) return;
+            const res = lab.submitAnswer(q.id, oi);
+            btns.forEach((x, xi) => {
+              x.classList.toggle("picked", xi === oi);
+              x.classList.toggle("correct", res.ok && xi === oi);
+              x.classList.toggle("wrong", !res.ok && xi === oi);
+              if (res.ok) x.disabled = true;
+            });
+            applyVerdict(res);
+          };
+          return b;
+        });
+        opts.append(...btns);
+        card.append(label, opts, msg);
+      } else {
+        const input = h("input", {
+          type: "text", class: "report-input",
+          placeholder: q.placeholder || "Type your finding...",
+          spellcheck: "false", autocomplete: "off", autocapitalize: "off",
+          "aria-label": q.prompt.replace(/[`*]/g, ""),
+        });
+        const btn = h("button", { type: "submit", class: "btn small" }, "Check");
+        const form = h("form", { class: "report-form" }, input, btn);
+        form.onsubmit = e => {
+          e.preventDefault();
+          if (lab.answers[q.id]?.ok) return;
+          const res = lab.submitAnswer(q.id, input.value);
+          if (res.ok) { input.disabled = true; btn.disabled = true; btn.textContent = "✓"; }
+          applyVerdict(res);
+        };
+        card.append(label, form, msg);
+      }
+      return card;
+    }));
+  }
+  buildReport();
 
   // ---- network map
   const topo = new Topology({ onPick: openConsole });
@@ -230,8 +298,16 @@ export function mountLab(root, level, { onDone, actions = [], note = null, badge
       hints++;
     } else {
       solutionShown = true;
+      const fmtAnswer = (id, val) => {
+        const q = (level.report || []).find(r => r.id === id);
+        if (!q) return `${id}: ${val}`;
+        const shown = q.kind === "choice" && typeof val === "number" ? q.options[val] : val;
+        return `${q.prompt.replace(/[`*]/g, "")}\n  → ${shown}`;
+      };
       hintBox.append(h("div", { class: "bubble solution" }, h("span", { class: "who" }, "Solution"),
-        level.solution.map(step => step.file
+        level.solution.map(step => step.answer
+          ? h("div", {}, h("strong", {}, "Field Report"), h("pre", {}, Object.entries(step.answer).map(([id, v]) => fmtAnswer(id, v)).join("\n")))
+          : step.file
           ? h("div", {}, h("strong", {}, `${step.pc}: ${step.file} should read`), h("pre", {}, step.content))
           : step.pc
           ? h("div", {}, h("strong", {}, step.pc), h("pre", {}, step.ip.mode === "dhcp" ? "IP settings: DHCP" : `IP settings: ${step.ip.ip}  ${step.ip.mask}  gateway ${step.ip.gw || "-"}`))
@@ -242,13 +318,14 @@ export function mountLab(root, level, { onDone, actions = [], note = null, badge
   }
 
   function resetLab() {
-    if (lab.commands > 0 && !confirm("Reset this lab to how it started? Your configuration changes will be lost (the timer and hints stay).")) return;
+    if ((lab.commands > 0 || Object.keys(lab.answers).length > 0) && !confirm("Reset this lab to how it started? Your configuration changes and report answers will be lost (the timer and hints stay).")) return;
     lab = new Lab(level);
     for (const t of terms.values()) t.el.remove();
     terms = new Map();
     active = null;
     topo.active = null;
     delete ipBar.dataset.dev;
+    buildReport();
     lastDone = lab.progress().map(o => o.done);
     refresh();
   }
@@ -273,7 +350,7 @@ export function mountLab(root, level, { onDone, actions = [], note = null, badge
 
   refresh();
   return {
-    dirty: () => lab.commands > 0 && !finished,
+    dirty: () => (lab.commands > 0 || Object.keys(lab.answers).length > 0) && !finished,
     destroy() { clearInterval(timer); },
   };
 }

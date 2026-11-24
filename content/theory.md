@@ -27,6 +27,16 @@ Networking is described in layers so that each layer only has to solve one probl
 
 Each switch port is its own **collision domain**. Each VLAN is one **broadcast domain**; only a router (or layer 3 switch) separates broadcast domains.
 
+## Reading a live network
+
+Before configuring anything, orient yourself in the environment. A few `show` and PC commands tell you the shape of a working network without guessing:
+
+- **Switch vs router.** Two PCs in the same subnet plugged into one switch can talk with **no router at all**: the switch only stores VLAN, MAC address and port (`show mac address-table`). A router holds the **routing table** (`show ip route`) and is only needed to move packets *between* different subnets.
+- **ARP bridges Layer 3 and Layer 2.** When a host pings an IP in its own subnet, it broadcasts an ARP request to `FFFF.FFFF.FFFF` ("who has this IP?") so it can learn the destination's MAC address (`arp -a` on a PC, `show ip arp` on a router). When the destination is in a **different subnet**, the host never ARPs for the remote IP — it puts its **default gateway's** MAC address in the frame and lets the router forward the packet on.
+- **Port speeds and uplinks.** `show interfaces status` shows each port's negotiated speed and duplex. If a switch has a few Gigabit ports (`Gi0/1`, `Gi0/2`) and many FastEthernet ports (`Fa0/1–8`), the Gigabit ports belong on uplinks to routers or other switches so all users do not share a 100 Mb/s bottleneck. Connecting a FastEthernet port to a Gigabit port still works — auto-negotiation settles on the lower speed (**100 Mb/s**).
+- **Finding neighbours from the CLI.** `show cdp neighbors` lists directly connected Cisco switches and routers with their hostnames, platforms and local/remote ports. `show cdp neighbors detail` adds each neighbour's **IP address**. `show lldp neighbors` (after `lldp run`) does the same across non-Cisco vendors.
+- **Checking a host.** `ipconfig /all` tells you whether a PC used static addressing or DHCP. If DHCP is on and no DHCP server replies, the host assigns itself a **169.254.x.x** (APIPA) address with no default gateway — it can only talk locally to other APIPA hosts until DHCP works or a static IP is configured.
+
 ## Cables
 
 | Cable | Reach | Notes |

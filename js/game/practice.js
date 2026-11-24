@@ -5,7 +5,7 @@
 // seeds and play its solution.
 
 import { C } from "./checks.js";
-import { intToIp, lenMask } from "../engine/ip.js";
+import { intToIp, lenMask, bcastOf } from "../engine/ip.js";
 
 // ---------------------------------------------------------------- randomness
 function mulberry(seed) {
@@ -43,6 +43,322 @@ const dhcpPc = (name, x, y) => ({ name, kind: "pc", x, y, ip: { mode: "dhcp" } }
 const cfg = (...cmds) => ["enable", "configure terminal", ...cmds, "end"];
 const cap = s => s[0].toUpperCase() + s.slice(1);
 const ISP = (x, y, cmds) => ({ name: "ISP", kind: "router", hostname: "ISP", x, y, locked: true, note: "Internet (8.8.8.8)", config: [...cmds, "interface loopback0", "ip address 8.8.8.8 255.255.255.255"] });
+
+// ---------------------------------------------------------------- forest-first discovery labs (Tier 1)
+// Shared by the story labs and their random variants so players can inspect
+// fresh working topologies on demand.
+
+export function l2VsL3Lab({ site, lanA, srvOct, h1, h2, p1, p2, p3, uplink }) {
+  const lanNet = `192.168.${lanA}`;
+  const srvNet = `10.${srvOct}.0`;
+  const gwIp = `${lanNet}.1`;
+  const pc1Ip = `${lanNet}.${h1}`;
+  const pc2Ip = `${lanNet}.${h2}`;
+  const srvIp = `${srvNet}.50`;
+  const srvGw = `${srvNet}.1`;
+  const rName = `${site}-R1`, swName = `${site}-SW1`;
+  const upFull = uplink === "g0/2" ? "GigabitEthernet0/2" : "GigabitEthernet0/1";
+  const upShort = uplink === "g0/2" ? "Gi0/2" : "Gi0/1";
+  return {
+    subject: `Tour the ${site} LAN: how the switch, router and PCs work together`,
+    brief: [
+      `Before you start changing configurations, get comfortable reading a working network. The **${site}** office is already up and running: a Layer 2 switch connecting three PCs, a router, and an application server in a second subnet.`,
+      "Everything on the main LAN works except **PC-NEW**, which never got a normal IP address. **Do not change any configuration** — click the devices on the map, inspect them with the CLI, and fill in the Field Report below.",
+      "Useful commands: `show mac address-table` and `show interfaces status` on the switch; `ipconfig /all`, `arp -a`, and `tracert` on a PC; `show ip route` and `show ip arp` on the router.",
+    ],
+    details: [
+      ["Site", site],
+      ["App server", `SRV-APP (${srvIp})`],
+      ["Goal", "Inspect the live topology and complete the 5 Field Report findings"],
+    ],
+    skills: ["show mac address-table", "show interfaces status", "ipconfig /all", "arp -a", "tracert", "L2 vs L3"],
+    topology: {
+      hideHostIps: true,
+      devices: [
+        { name: "R1", kind: "router", hostname: rName, x: 520, y: 95, config: [...ifc("g0/0", gwIp, M24), ...ifc("g0/1", srvGw, M24)] },
+        { name: "SW1", kind: "switch", hostname: swName, x: 280, y: 265 },
+        { name: "PC1", kind: "pc", x: 80, y: 465, note: "Workstation 1", ip: { mode: "static", ip: pc1Ip, mask: M24, gw: gwIp } },
+        { name: "PC2", kind: "pc", x: 280, y: 485, note: "Workstation 2", ip: { mode: "static", ip: pc2Ip, mask: M24, gw: gwIp } },
+        { name: "PC-NEW", kind: "pc", x: 480, y: 465, note: "New laptop", ip: { mode: "dhcp" } },
+        { name: "SRV-APP", kind: "server", x: 780, y: 265, note: "App server", services: ["http"], ip: { mode: "static", ip: srvIp, mask: M24, gw: srvGw } },
+      ],
+      links: [`R1:g0/0 SW1:${uplink}`, `SW1:fa0/${p1} PC1`, `SW1:fa0/${p2} PC2`, `SW1:fa0/${p3} PC-NEW`, "R1:g0/1 SRV-APP"],
+    },
+    report: [
+      {
+        id: "sw-holds", kind: "choice",
+        prompt: `Run \`show mac address-table\` on **${swName}**. What does a Layer 2 switch store to forward frames?`,
+        options: [
+          "VLAN, MAC address, and switch port",
+          "IP address, subnet mask, and next-hop router",
+          "Hostnames and DHCP lease timers",
+        ],
+        answer: 0,
+        hint: `Open ${swName} and run \`show mac address-table\` — look at the column headers.`,
+        explain: "A Layer 2 switch only forwards by MAC address inside a VLAN; two PCs in the same subnet can talk through a switch with no router at all.",
+      },
+      {
+        id: "uplink-port", kind: "if", placeholder: "e.g. Gi0/1",
+        prompt: `Run \`show interfaces status\` on **${swName}**. Which port runs at 1000 Mb/s (\`a-1000\`) as the uplink to **${rName}**?`,
+        answer: upFull,
+        hint: `Check the \`Speed\` column in \`show interfaces status\` on ${swName} for \`a-1000\`.`,
+        explain: `${upShort} negotiates 1000 Mb/s to ${rName} so the uplink is not a bottleneck; FastEthernet ports run at 100 Mb/s for end hosts.`,
+      },
+      {
+        id: "pc1-port", kind: "if", placeholder: "e.g. Fa0/1",
+        prompt: `Match **PC1**'s Physical Address (\`ipconfig /all\`) in **${swName}**'s \`show mac address-table\`. Which switch port is **PC1** plugged into?`,
+        answer: `FastEthernet0/${p1}`,
+        hint: `Compare the hex digits of PC1's Physical Address from \`ipconfig /all\` against the Mac Address column on ${swName}.`,
+        explain: `Tracing a host's MAC address in the switch's MAC table locates its exact physical port (Fa0/${p1}).`,
+      },
+      {
+        id: "pcnew-why", kind: "choice",
+        prompt: "Run `ipconfig /all` on **PC-NEW**. Why does it have a `169.254.x.x` address?",
+        options: [
+          "DHCP is enabled, no DHCP server answered, so it fell back to APIPA",
+          "Its static IP was configured in the wrong subnet",
+          "The switch disabled its port with port security",
+        ],
+        answer: 0,
+        hint: "Look at the `DHCP Enabled` and `Autoconfiguration IPv4 Address` lines in `ipconfig /all` on PC-NEW.",
+        explain: "Without a DHCP server on the subnet, a DHCP client self-assigns a 169.254.x.x APIPA address and cannot reach the router.",
+      },
+      {
+        id: "arp-remote", kind: "choice",
+        prompt: `Run \`arp -a\` and \`tracert ${srvIp}\` on **PC1**. When **PC1** sends traffic to **SRV-APP** (${srvIp}, in another subnet), whose MAC address does **PC1** put in the Ethernet frame?`,
+        options: [
+          `Its default gateway (${rName}, ${gwIp})`,
+          "SRV-APP's own MAC address",
+          "The broadcast MAC address FF-FF-FF-FF-FF-FF",
+        ],
+        answer: 0,
+        hint: `Look at \`arp -a\` on PC1: is ${srvIp} in PC1's ARP cache, or only local-subnet devices including ${gwIp}?`,
+        explain: `ARP only resolves addresses inside your own subnet. PC1 hands off-subnet frames to ${rName}'s MAC (${gwIp}), and the router forwards the packet on.`,
+      },
+    ],
+    objectives: [
+      { text: `Inspect the MAC table and port status on ${swName}`, check: C.all(C.ran("SW1", /^(do\s+)?sh\S*\s+mac/i), C.ran("SW1", /^(do\s+)?sh\S*\s+int\S*\s+st/i)) },
+      { text: "Check PC1's IP details and ARP cache (`ipconfig /all` and `arp -a`)", check: C.all(C.ran("PC1", /^ipconfig\s+\/all/i), C.ran("PC1", /^arp\s+-a/i)) },
+      { text: `Trace the route from PC1 to SRV-APP (\`tracert ${srvIp}\`)`, check: C.ran("PC1", new RegExp("^tracert\\s+" + srvIp.replace(/\./g, "\\."), "i")) },
+      { text: "Check PC-NEW's addressing status (`ipconfig /all`)", check: C.ran("PC-NEW", /^ipconfig/i) },
+      { text: "Complete all 5 findings in the Field Report", check: C.reportComplete() },
+    ],
+    hints: [
+      `On **${swName}**, you can run \`show mac address-table\` and \`show interfaces status\` straight from user mode (\`>\`) or after \`enable\`.`,
+      `On **PC1**, type \`ipconfig /all\` to see its MAC address, \`arp -a\` to see which local IPs it has MAC mappings for, and \`tracert ${srvIp}\` to watch the packet pass through **${rName}**.`,
+      `Look at the hex digits of PC1's MAC address (ignoring hyphens vs dots) and find the same digits in **${swName}**'s MAC table. On **PC-NEW**, \`ipconfig /all\` shows \`DHCP Enabled: Yes\` with a \`169.254.x.x\` autoconfiguration address.`,
+    ],
+    solution: [
+      { on: "SW1", cmds: ["show mac address-table", "show interfaces status"] },
+      { on: "PC1", cmds: ["ipconfig /all", "arp -a", `tracert ${srvIp}`] },
+      { on: "PC-NEW", cmds: ["ipconfig /all"] },
+      { answer: { "sw-holds": 0, "uplink-port": upFull, "pc1-port": `FastEthernet0/${p1}`, "pcnew-why": 0, "arp-remote": 0 } },
+    ],
+    debrief: "Switches live at Layer 2: they learn MAC addresses per port and move frames inside one subnet with no router needed. Routers live at Layer 3: they connect separate subnets and carry traffic between them. ARP bridges the two layers inside each subnet, and Gigabit ports belong on router uplinks so endpoints do not share a 100 Mb/s bottleneck.",
+  };
+}
+
+export function walkTheWireLab({ site, lan1, lan2, wan, sw1Up, sw2Up, pOps, pSrv, pFin }) {
+  const n1 = `192.168.${lan1}`, n2 = `192.168.${lan2}`, w = `10.0.${wan}`;
+  const r1Name = `${site}-CORE`, r2Name = `${site}-EDGE`, sw1Name = `${site}-ACC1`, sw2Name = `${site}-ACC2`;
+  const r1Lan = `${n1}.1`, sw1Mgmt = `${n1}.2`, opsIp = `${n1}.10`, srvIp = `${n1}.50`;
+  const r2Lan = `${n2}.1`, sw2Mgmt = `${n2}.2`, finIp = `${n2}.20`;
+  const r1Wan = `${w}.1`, r2Wan = `${w}.2`;
+  const sw2UpFull = sw2Up === "g0/2" ? "GigabitEthernet0/2" : "GigabitEthernet0/1";
+  return {
+    subject: `Survey the ${site} campus: discover every device, port and address`,
+    brief: [
+      `Nobody updated the site inventory for the **${site}** campus. The network is live and working, with two routers, two switches, and three end hosts — but the diagram has no IP labels.`,
+      "Walk the network using discovery commands (`show cdp neighbors`, `show cdp neighbors detail`, `show lldp neighbors`, `show ip interface brief`, `show ip arp`, and `show mac address-table`) and record the five facts in the Field Report. Do not change any configuration.",
+    ],
+    details: [
+      ["Campus", site],
+      ["Discovery tools", "CDP (all devices) · LLDP (EDGE & ACC2) · ARP · MAC table"],
+      ["Goal", "Map neighbour IPs, ports, management address and server location"],
+    ],
+    skills: ["show cdp neighbors detail", "show lldp neighbors", "show ip interface brief", "show ip arp", "show mac address-table"],
+    topology: {
+      hideHostIps: true,
+      devices: [
+        { name: "R1", kind: "router", hostname: r1Name, x: 260, y: 100, config: [...ifc("g0/0", r1Lan, M24), ...ifc("g0/1", r1Wan, M30), "exit", `ip route ${n2}.0 ${M24} ${r2Wan}`] },
+        { name: "R2", kind: "router", hostname: r2Name, x: 720, y: 100, config: ["lldp run", ...ifc("g0/0", r2Lan, M24), ...ifc("g0/1", r2Wan, M30), "exit", `ip route ${n1}.0 ${M24} ${r1Wan}`] },
+        { name: "SW1", kind: "switch", hostname: sw1Name, x: 260, y: 270, config: ["interface vlan 1", `ip address ${sw1Mgmt} ${M24}`, "no shutdown", "exit", `ip default-gateway ${r1Lan}`] },
+        { name: "SW2", kind: "switch", hostname: sw2Name, x: 720, y: 270, config: ["lldp run", "interface vlan 1", `ip address ${sw2Mgmt} ${M24}`, "no shutdown", "exit", `ip default-gateway ${r2Lan}`] },
+        { name: "PC-OPS", kind: "pc", x: 100, y: 470, note: "Ops desk", ip: { mode: "static", ip: opsIp, mask: M24, gw: r1Lan } },
+        { name: "SRV-FILE", kind: "server", x: 420, y: 470, note: "File server", services: ["http"], ip: { mode: "static", ip: srvIp, mask: M24, gw: r1Lan } },
+        { name: "PC-FIN", kind: "pc", x: 720, y: 470, note: "Finance desk", ip: { mode: "static", ip: finIp, mask: M24, gw: r2Lan } },
+      ],
+      links: [
+        "R1:g0/1 R2:g0/1", `R1:g0/0 SW1:${sw1Up}`, `R2:g0/0 SW2:${sw2Up}`,
+        `SW1:fa0/${pOps} PC-OPS`, `SW1:fa0/${pSrv} SRV-FILE`, `SW2:fa0/${pFin} PC-FIN`,
+      ],
+    },
+    report: [
+      {
+        id: "edge-ip", kind: "ip", placeholder: "e.g. 10.0.12.2",
+        prompt: `Run \`show cdp neighbors detail\` on **${r1Name}**. What IP address does **${r2Name}** use on the link between the two routers?`,
+        answer: r2Wan,
+        hint: `On ${r1Name}, look under \`Device ID: ${r2Name}\` → \`Entry address(es)\` in \`show cdp neighbors detail\`.`,
+        explain: `\`show cdp neighbors detail\` gives you a neighbour's IP address (${r2Wan}) without even logging into that neighbour.`,
+      },
+      {
+        id: "lldp-port", kind: "if", placeholder: "e.g. Gi0/1",
+        prompt: `Run \`show lldp neighbors\` on **${r2Name}**. Which port on **${sw2Name}** connects up to **${r2Name}**?`,
+        answer: sw2UpFull,
+        hint: `Check the \`Port ID\` column for \`${sw2Name}\` in \`show lldp neighbors\` on ${r2Name}.`,
+        explain: `LLDP is the open IEEE standard for neighbour discovery — ${r2Name} learns ${sw2Name}'s remote port (${sw2Up.toUpperCase().replace("G", "Gi")}) directly from LLDP frames.`,
+      },
+      {
+        id: "sw1-ip", kind: "ip", placeholder: "e.g. 192.168.10.2",
+        prompt: `What is **${sw1Name}**'s management IP address on \`Vlan1\`? (Check \`show cdp neighbors detail\` on **${r1Name}** or \`show ip interface brief\` on **${sw1Name}**.)`,
+        answer: sw1Mgmt,
+        hint: `Run \`show ip interface brief\` on ${sw1Name} and check the \`Vlan1\` row.`,
+        explain: `Even a Layer 2 switch uses a management SVI (\`Vlan1\`, ${sw1Mgmt}) so engineers can monitor and administer it.`,
+      },
+      {
+        id: "srv-ip", kind: "ip", placeholder: "e.g. 192.168.10.50",
+        prompt: `Check \`show ip arp\` on **${r1Name}** and \`ipconfig\` on **SRV-FILE**. What is **SRV-FILE**'s IP address?`,
+        answer: srvIp,
+        hint: `Run \`show ip arp\` on ${r1Name} to list active hosts on the ${n1}.0/24 LAN, and confirm with \`ipconfig\` on SRV-FILE.`,
+        explain: `\`show ip arp\` on the gateway router lists every active host in the LAN, and \`ipconfig\` on SRV-FILE confirms it is ${srvIp}.`,
+      },
+      {
+        id: "srv-port", kind: "if", placeholder: "e.g. Fa0/2",
+        prompt: `Which physical switch port on **${sw1Name}** is **SRV-FILE** plugged into? (Match its MAC from \`ipconfig /all\` or \`show ip arp\` in \`show mac address-table\`.)`,
+        answer: `FastEthernet0/${pSrv}`,
+        hint: `Compare SRV-FILE's MAC address (from \`show ip arp\` on ${r1Name} or \`ipconfig /all\` on SRV-FILE) against \`show mac address-table\` on ${sw1Name}.`,
+        explain: `IP → MAC (ARP) followed by MAC → switch port (MAC table) is the universal way to locate any host in a live network.`,
+      },
+    ],
+    objectives: [
+      { text: `Inspect CDP neighbour details on ${r1Name} (\`show cdp neighbors detail\`)`, check: C.ran("R1", /^(do\s+)?sh\S*\s+cdp\s+n\S*\s+d/i) },
+      { text: `Inspect LLDP neighbours on ${r2Name} (\`show lldp neighbors\`)`, check: C.ran("R2", /^(do\s+)?sh\S*\s+lldp\s+n/i) },
+      { text: `Inspect the ARP table on ${r1Name} (\`show ip arp\`)`, check: C.ran("R1", /^(do\s+)?sh\S*\s+(ip\s+)?arp/i) },
+      { text: `Inspect the MAC address table on ${sw1Name} (\`show mac address-table\`)`, check: C.ran("SW1", /^(do\s+)?sh\S*\s+mac/i) },
+      { text: "Complete all 5 findings in the Field Report", check: C.reportComplete() },
+    ],
+    hints: [
+      `Start on **${r1Name}**: \`show cdp neighbors detail\` shows both **${r2Name}**'s WAN IP and **${sw1Name}**'s management IP in one shot.`,
+      `On **${r2Name}**, type \`show lldp neighbors\` to see **${sw2Name}** and the remote port it uses.`,
+      `To pinpoint **SRV-FILE**: run \`ipconfig /all\` on **SRV-FILE** (for its IP and MAC) and \`show mac address-table\` on **${sw1Name}** to see which \`Fa0/x\` port learned that MAC.`,
+    ],
+    solution: [
+      { on: "R1", cmds: ["show cdp neighbors detail", "show ip arp"] },
+      { on: "R2", cmds: ["show lldp neighbors"] },
+      { on: "SW1", cmds: ["show ip interface brief", "show mac address-table"] },
+      { on: "SRV-FILE", cmds: ["ipconfig /all"] },
+      { answer: { "edge-ip": r2Wan, "lldp-port": sw2UpFull, "sw1-ip": sw1Mgmt, "srv-ip": srvIp, "srv-port": `FastEthernet0/${pSrv}` } },
+    ],
+    debrief: "In real operations you rarely trust a stale diagram. `show cdp neighbors detail` and `show lldp neighbors` map routers and switches hop by hop; `show ip arp` + `show mac address-table` trace any IP address straight down to its physical switch port.",
+  };
+}
+
+export function readSubnetsLab({ site, oct, wanOct, wanBlock, salesStart, salesLen, srvStart, srvLen, brStart, brLen }) {
+  const mk = len => intToIp(lenMask(len));
+  const netStr = (s, len) => `192.168.${oct}.${s}/${len}`;
+  const salesMask = mk(salesLen), srvMask = mk(srvLen), brMask = mk(brLen);
+  const salesGw = `192.168.${oct}.${salesStart + 1}`;
+  const salesPc1 = `192.168.${oct}.${salesStart + 10}`;
+  const salesPc2 = `192.168.${oct}.${salesStart + 18}`;
+  const srvGw = `192.168.${oct}.${srvStart + 1}`;
+  const srvIp = `192.168.${oct}.${srvStart + 6}`;
+  const brGw = `192.168.${oct}.${brStart + 1}`;
+  const brPc = `192.168.${oct}.${brStart + 12}`;
+  const brBcast = intToIp(bcastOf(ip4(192, 168, oct, brStart), lenMask(brLen)));
+  const wanBase = `10.${wanOct}.20`;
+  const r1Wan = `${wanBase}.${wanBlock + 1}`, r2Wan = `${wanBase}.${wanBlock + 2}`;
+  const r1Name = `${site}-HQ`, r2Name = `${site}-BR`;
+  return {
+    subject: `Audit the ${site} subnets: read the live routing and addressing plan`,
+    brief: [
+      `The **${site}** network splits one \`192.168.${oct}.0/24\` address block into three smaller LAN subnets (Sales, Servers, and Branch), joined by a \`/30\` point-to-point link between **${r1Name}** and **${r2Name}**. Everything is already configured and working.`,
+      "Inspect the routers with `show ip route` and `show interfaces`, and check **PC-SALES1** with `ipconfig` and `tracert` to understand how the subnetworks divide the network and how routers move packets between them.",
+    ],
+    details: [
+      ["Site", site],
+      ["Parent LAN block", `192.168.${oct}.0/24 (divided into Sales, Servers, Branch)`],
+      ["Branch PC", `PC-BR1 (${brPc})`],
+    ],
+    skills: ["show ip route", "show interfaces", "network & broadcast addresses", "/30 WAN links", "tracert"],
+    topology: {
+      hideHostIps: true,
+      devices: [
+        { name: "R1", kind: "router", hostname: r1Name, x: 300, y: 100,
+          config: [...ifc("g0/0", salesGw, salesMask), ...ifc("g0/2", srvGw, srvMask), ...ifc("g0/1", r1Wan, M30), "exit", `ip route 192.168.${oct}.${brStart} ${brMask} ${r2Wan}`] },
+        { name: "R2", kind: "router", hostname: r2Name, x: 740, y: 100,
+          config: [...ifc("g0/0", brGw, brMask), ...ifc("g0/1", r2Wan, M30), "exit", `ip route 192.168.${oct}.${salesStart} ${salesMask} ${r1Wan}`, `ip route 192.168.${oct}.${srvStart} ${srvMask} ${r1Wan}`] },
+        { name: "SW1", kind: "switch", hostname: `${site}-SW1`, x: 150, y: 280 },
+        { name: "SW2", kind: "switch", hostname: `${site}-SW2`, x: 740, y: 280 },
+        { name: "PC-SALES1", kind: "pc", x: 60, y: 470, note: "Sales PC 1", ip: { mode: "static", ip: salesPc1, mask: salesMask, gw: salesGw } },
+        { name: "PC-SALES2", kind: "pc", x: 250, y: 470, note: "Sales PC 2", ip: { mode: "static", ip: salesPc2, mask: salesMask, gw: salesGw } },
+        { name: "SRV-DB", kind: "server", x: 480, y: 290, note: "Database", services: ["http"], ip: { mode: "static", ip: srvIp, mask: srvMask, gw: srvGw } },
+        { name: "PC-BR1", kind: "pc", x: 740, y: 470, note: "Branch PC", ip: { mode: "static", ip: brPc, mask: brMask, gw: brGw } },
+      ],
+      links: ["R1:g0/1 R2:g0/1", "R1:g0/0 SW1:g0/1", "R1:g0/2 SRV-DB", "R2:g0/0 SW2:g0/1", "SW1:fa0/1 PC-SALES1", "SW1:fa0/2 PC-SALES2", "SW2:fa0/1 PC-BR1"],
+    },
+    report: [
+      {
+        id: "subnet-count", kind: "num", placeholder: "e.g. 4",
+        prompt: `Run \`show ip route\` on **${r1Name}**. Counting every \`C\` (connected) and \`S\` (static) network — ignoring \`L\` \`/32\` interface lines — how many IPv4 subnets exist in this topology?`,
+        answer: 4,
+        hint: `Count the \`C\` and \`S\` rows in \`show ip route\` on ${r1Name} (each \`L /32\` is only the router's own local IP, not a separate subnet).`,
+        explain: "There are 4 subnets: Sales LAN, Server LAN, Branch LAN, and the `/30` WAN link between the two routers.",
+      },
+      {
+        id: "sales-net", kind: "cidr", placeholder: `e.g. 192.168.${oct}.0/26`,
+        prompt: `What is the **network address with prefix** of the Sales LAN (on **${r1Name}** \`G0/0\`)?`,
+        answer: netStr(salesStart, salesLen),
+        hint: `Look at the \`C\` route for \`GigabitEthernet0/0\` in \`show ip route\` on ${r1Name}.`,
+        explain: `\`${netStr(salesStart, salesLen)}\` is the network address (all host bits 0) that routers store to represent the entire Sales LAN.`,
+      },
+      {
+        id: "branch-bcast", kind: "ip", placeholder: `e.g. 192.168.${oct}.255`,
+        prompt: `Inspect the Branch LAN on **${r2Name}** (\`show ip route\`). What is the **broadcast address** of the Branch LAN subnet?`,
+        answer: brBcast,
+        hint: `Read the Branch LAN's \`C\` route on ${r2Name} (/${brLen}, block size ${2 ** (32 - brLen)}). The broadcast is one below the next block.`,
+        explain: `The Branch LAN \`${netStr(brStart, brLen)}\` runs from .${brStart} to .${brStart + 2 ** (32 - brLen) - 1}, so ${brBcast} reaches every host in the Branch subnet — and ${r2Name} stops broadcasts from leaking to HQ.`,
+      },
+      {
+        id: "wan-hosts", kind: "num", placeholder: "e.g. 2",
+        prompt: `Look at the \`/30\` WAN link between **${r1Name}** and **${r2Name}** in \`show ip route\`. How many **usable host addresses** fit in a \`/30\` subnet?`,
+        answer: 2,
+        hint: "A `/30` has 2 host bits: 2² = 4 total addresses, minus 1 network and 1 broadcast.",
+        explain: "A `/30` has exactly 2 usable addresses — just enough for the two router interfaces, wasting no IP space.",
+      },
+      {
+        id: "who-routes", kind: "choice",
+        prompt: `Run \`tracert ${brPc}\` from **PC-SALES1**. Which devices actually direct packets from the Sales subnet to the Branch subnet?`,
+        options: [
+          `The routers (${r1Name} and ${r2Name}), using their routing tables`,
+          `The switches (${site}-SW1 and ${site}-SW2), using their MAC tables`,
+          "No intermediate device — PC-SALES1 broadcasts directly to PC-BR1",
+        ],
+        answer: 0,
+        hint: `Watch the hops printed by \`tracert ${brPc}\` on PC-SALES1: only Layer 3 routers appear as hops.`,
+        explain: `Switches stay inside one subnet at Layer 2; routers (${r1Name} → ${r2Name}) read the destination IP and forward packets across subnets.`,
+      },
+    ],
+    objectives: [
+      { text: `Inspect the routing table on ${r1Name} (\`show ip route\`)`, check: C.ran("R1", /^(do\s+)?sh\S*\s+ip\s+ro/i) },
+      { text: `Inspect the routing table or interfaces on ${r2Name}`, check: C.ran("R2", /^(do\s+)?sh\S*\s+(ip\s+ro|ip\s+int|int)/i) },
+      { text: "Check PC-SALES1's IP address and subnet mask (`ipconfig`)", check: C.ran("PC-SALES1", /^ipconfig/i) },
+      { text: `Trace the path from PC-SALES1 to PC-BR1 (\`tracert ${brPc}\`)`, check: C.ran("PC-SALES1", new RegExp("^tracert\\s+" + brPc.replace(/\./g, "\\."), "i")) },
+      { text: "Complete all 5 findings in the Field Report", check: C.reportComplete() },
+    ],
+    hints: [
+      `On **${r1Name}**, \`show ip route\` lists every connected (\`C\`) and static (\`S\`) subnet with its \`/prefix\` length. Ignore the \`L /32\` lines when counting subnets.`,
+      `On **${r2Name}**, \`show ip route\` shows the Branch LAN on \`GigabitEthernet0/0\`. Block size = 256 − mask octet (for /${brLen}, block size is ${2 ** (32 - brLen)}). Broadcast = network + block size − 1.`,
+      `On **PC-SALES1**, run \`ipconfig\` and \`tracert ${brPc}\` to see the packet hop from ${salesGw} (${r1Name}) to ${r2Wan} (${r2Name}) and finally to ${brPc}.`,
+    ],
+    solution: [
+      { on: "R1", cmds: ["show ip route"] },
+      { on: "R2", cmds: ["show ip route"] },
+      { on: "PC-SALES1", cmds: ["ipconfig", `tracert ${brPc}`] },
+      { answer: { "subnet-count": 4, "sales-net": netStr(salesStart, salesLen), "branch-bcast": brBcast, "wan-hosts": 2, "who-routes": 0 } },
+    ],
+    debrief: "Subnetting splits one address block into separate Layer 3 networks (and separate broadcast domains). Every `C` or `S` entry in `show ip route` is one subnet; switches handle traffic inside a subnet while routers forward traffic between them.",
+  };
+}
 
 // ---------------------------------------------------------------- the Ansible lab
 // Shared by the story lab (fixed values) and its variants (random values).
@@ -1448,6 +1764,50 @@ const SKILLS = [
     },
   },
 
+  // ---------- forest-first topology discovery (Tier 1)
+  {
+    id: "topo-l2l3", topic: "fundamentals", name: "Inside the LAN", par: 420,
+    gen(x) {
+      const ports = x.sample([1, 2, 3, 4, 5, 6, 7, 8], 3);
+      return l2VsL3Lab({
+        site: x.pick(SITES), lanA: x.int(10, 220), srvOct: x.int(20, 99),
+        h1: x.int(10, 40), h2: x.int(50, 90),
+        p1: ports[0], p2: ports[1], p3: ports[2],
+        uplink: x.pick(["g0/1", "g0/2"]),
+      });
+    },
+  },
+  {
+    id: "topo-map", topic: "fundamentals", name: "Map the Network", par: 480,
+    gen(x) {
+      const lan1 = x.int(10, 120), lan2 = x.int(130, 240);
+      const [pOps, pSrv] = x.sample([1, 2, 3, 4, 5, 6, 7, 8], 2);
+      return walkTheWireLab({
+        site: x.pick(SITES), lan1, lan2, wan: x.int(10, 99),
+        sw1Up: x.pick(["g0/1", "g0/2"]), sw2Up: x.pick(["g0/1", "g0/2"]),
+        pOps, pSrv, pFin: x.int(1, 8),
+      });
+    },
+  },
+  {
+    id: "topo-subnets", topic: "subnetting", name: "Read the Subnets", par: 540,
+    gen(x) {
+      // Pick one of several clean, non-overlapping VLSM layouts inside a /24
+      const layout = x.pick([
+        { salesStart: 0, salesLen: 25, brStart: 128, brLen: 26, srvStart: 192, srvLen: 27 },
+        { salesStart: 0, salesLen: 26, brStart: 64, brLen: 27, srvStart: 96, srvLen: 28 },
+        { salesStart: 64, salesLen: 26, brStart: 192, brLen: 27, srvStart: 144, srvLen: 28 },
+        { salesStart: 128, salesLen: 26, brStart: 0, brLen: 26, srvStart: 224, srvLen: 27 },
+        { salesStart: 0, salesLen: 26, brStart: 128, brLen: 25, srvStart: 64, srvLen: 28 },
+      ]);
+      return readSubnetsLab({
+        site: x.pick(SITES), oct: x.int(11, 230), wanOct: x.int(10, 99),
+        wanBlock: x.pick([0, 4, 8, 12, 16, 20, 24, 28, 32]),
+        ...layout,
+      });
+    },
+  },
+
   // ---------- Ansible (v2.0 blueprint)
   {
     id: "ansible-vlan", topic: "netops", name: "Roll out a VLAN with Ansible", par: 780,
@@ -1461,6 +1821,7 @@ const SKILLS = [
 // Which story lab each template is a variant of. A lab can have more than one
 // (for example a build version and a troubleshooting version).
 const AFTER = {
+  "topo-l2l3": "l2-vs-l3", "topo-map": "walk-the-wire", "topo-subnets": "read-the-subnets",
   "stp-root": "root-bridge", "stp-guards": "root-bridge", "rogue-root": "rogue-switch", "channel-build": "port-channel", "channel-fault": "port-channel",
   "ansible-vlan": "ansible-rollout", "static-floating": "floating-backup", "relay-build": "dhcp-relay", "relay-fault": "dhcp-relay",
   "cli-name": "first-console", "cli-setup": "lock-it-down", "addr-lan": "desk-move", "addr-fault": "desk-move", "addr-svi": "switch-mgmt",

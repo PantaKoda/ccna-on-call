@@ -1,4 +1,5 @@
 import { C } from "../checks.js";
+import { l2VsL3Lab, walkTheWireLab, readSubnetsLab } from "../practice.js";
 
 const M24 = "255.255.255.0";
 
@@ -37,6 +38,27 @@ export default [
     ],
     solution: [{ on: "SW1", cmds: ["enable", "configure terminal", "hostname WH-SW1", "end", "show running-config", "copy running-config startup-config", ""] }],
     debrief: "Every change you type lands in the running configuration (RAM). Only `copy running-config startup-config` writes it to NVRAM, so an unsaved switch forgets everything at the next reload.",
+  },
+
+  {
+    id: "l2-vs-l3", tier: 1, type: "lab", xp: 120, par: 420,
+    title: "Inside the LAN",
+    from: "Dana Okafor, NOC Team Lead",
+    ...l2VsL3Lab({ site: "HARBOR", lanA: 10, srvOct: 50, h1: 11, h2: 12, p1: 2, p2: 4, p3: 6, uplink: "g0/1" }),
+  },
+
+  {
+    id: "walk-the-wire", tier: 1, type: "lab", xp: 140, par: 480,
+    title: "Map the Network",
+    from: "Dana Okafor, NOC Team Lead",
+    ...walkTheWireLab({ site: "NORTH", lan1: 20, lan2: 30, wan: 12, sw1Up: "g0/1", sw2Up: "g0/2", pOps: 1, pSrv: 5, pFin: 3 }),
+  },
+
+  {
+    id: "read-the-subnets", tier: 1, type: "lab", xp: 150, par: 540,
+    title: "Read the Subnets",
+    from: "Dana Okafor, NOC Team Lead",
+    ...readSubnetsLab({ site: "WEST", oct: 33, wanOct: 10, wanBlock: 4, salesStart: 64, salesLen: 26, srvStart: 144, srvLen: 28, brStart: 192, brLen: 27 }),
   },
 
   {
