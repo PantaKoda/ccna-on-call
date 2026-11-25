@@ -4,6 +4,8 @@ Every change to the game is listed here, newest first. Versions follow [semantic
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-25
+
 ### Added
 
 - Three "forest-first" working-topology discovery labs in Tier 1 (right after *First Console* and before *Lock It Down*), each with random variants and an interactive Field Report inside the ticket:
